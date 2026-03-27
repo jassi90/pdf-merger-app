@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PDF & Image Merger</title>
+<style>
+  body { font-family: Arial; max-width: 700px; margin: 30px auto; }
+  h2 { text-align: center; }
+  #drop-area { 
+    border: 2px dashed #666; 
+    padding: 30px; 
+    text-align: center; 
+    margin-bottom: 20px; 
+    cursor: pointer; 
+    background: #f9f9f9;
+  }
+  #file-list { list-style: none; padding: 0; }
+  #file-list li { 
+    padding: 8px; 
+    border: 1px solid #ccc; 
+    margin-bottom: 5px; 
+    cursor: move; 
+    background: #fff;
+  }
+  button { padding: 10px 20px; margin-top: 10px; cursor: pointer; }
+</style>
+</head>
+<body>
+
+<h2>PDF & Image Merger</h2>
+
+<div id="drop-area">
+  Drag & Drop files here or click to select
+  <input type="file" id="file-input" multiple style="display:none;">
+</div>
+
+<ul id="file-list"></ul>
+<button id="merge-btn">Merge Files</button>
+
+<script>
+const dropArea = document.getElementById('drop-area');
+const fileInput = document.getElementById('file-input');
+const fileList = document.getElementById('file-list');
+let files = [];
+
+// Click to open file picker
+dropArea.addEventListener('click', () => fileInput.click());
+
+// Handle file selection
+fileInput.addEventListener('change', e => addFiles(e.target.files));
+
+// Handle drag & drop
+dropArea.addEventListener('dragover', e => e.preventDefault());
+dropArea.addEventListener('drop', e => {
+  e.preventDefault();
+  addFiles(e.dataTransfer.files);
+});
+
+function addFiles(selectedFiles) {
+  for (let f of selectedFiles) {
+    files.push(f);
+  }
+  renderFiles();
+}
+
+// Display file list
+function renderFiles() {
+  fileList.innerHTML = '';
+  files.forEach((file, index) => {
+    const li = document.createElement('li');
+    li.textContent = file.name;
+    li.draggable = true;
+
+    // Drag & Drop reordering
+    li.addEventListener('dragstart', e => {
+      e.dataTransfer.setData('text/plain', index);
+    });
+    li.addEventListener('dragover', e => e.preventDefault());
+    li.addEventListener('drop', e => {
+      const fromIndex = e.dataTransfer.getData('text');
+      const toIndex = index;
+      const movedFile = files.splice(fromIndex, 1)[0];
+      files.splice(toIndex, 0, movedFile);
+      renderFiles();
+    });
+
+    fileList.appendChild(li);
+  });
+}
+
+// Merge files
+document.getElementById('merge-btn').addEventListener('click', async () => {
+  if (files.length === 0) return alert('Select some files first');
+
+  const formData = new FormData();
+  files.forEach(f => formData.append('files', f));
+
+  const res = await fetch('/merge', { method: 'POST', body: formData });
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'merged.pdf';
+  a.click();
+});
+</script>
+
+</body>
+</html>
