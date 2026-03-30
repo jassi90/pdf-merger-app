@@ -4,7 +4,9 @@ const path = require('path');
 const { PDFDocument } = require('pdf-lib');
 
 async function runAutomation(systemId) {
-    const browser = await chromium.launch({ headless: false });
+    const browser = await chromium.launch({ headless: false,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    });
     const page = await browser.newPage();
 
     try {
