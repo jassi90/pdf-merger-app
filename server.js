@@ -48,7 +48,7 @@ app.post('/merge', upload.array('files'), async (req, res) => {
         res.send(Buffer.from(mergedBytes));
 
     } catch (err) {
-        console.error(err);
+        console.error("MERGE ERROR:", err);
         res.status(500).send('Error merging files');
     }
 });
@@ -65,11 +65,14 @@ app.post('/generate-pdf', async (req, res) => {
         res.send(Buffer.from(pdfBytes));
 
     } catch (err) {
-        console.error(err);
-        res.status(500).send('Automation failed');
+        console.error("AUTOMATION ERROR:", err);
+        res.status(500).send(err.message);
     }
 });
 
-app.listen(3000, () => {
-    console.log('Server running at http://localhost:3000');
+/* ---------------- START SERVER ---------------- */
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
 });

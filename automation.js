@@ -10,13 +10,15 @@ async function runAutomation(systemId) {
     try {
         // LOGIN
         await page.goto('https://portal2.carbonsolutionsgroup.com/admin/login');
+        await page.waitForTimeout(1000);
         await page.fill('input[type="email"]', process.env.EMAIL);
         await page.fill('input[type="password"]', process.env.PASSWORD);
         await page.click('button:has-text("Login")');
+        await page.waitForTimeout(1000);
 
         // NAVIGATE
         await page.goto(`https://portal2.carbonsolutionsgroup.com/admin/solar_panel_system/${systemId}/checklist?showAll=false#monitoring-info`);
-
+        await page.waitForTimeout(1000);
         const systemName = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(8) > td:nth-child(2)').innerText();
         const address = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(6) > td:nth-child(2)').innerText();
         const ABPID = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(3) > td:nth-child(2)').innerText();
