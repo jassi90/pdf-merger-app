@@ -5,7 +5,6 @@ const multer = require('multer');
 const { PDFDocument } = require('pdf-lib');
 const fs = require('fs');
 const path = require('path');
-const { runAutomation } = require('./automation');
 
 const app = express();
 
@@ -28,14 +27,27 @@ app.post('/merge', upload.array('files'), async (req, res) => {
                 const pdf = await PDFDocument.load(bytes);
                 const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
                 pages.forEach(p => mergedPdf.addPage(p));
+
             } else if (ext === '.jpg' || ext === '.jpeg') {
                 const image = await mergedPdf.embedJpg(bytes);
                 const page = mergedPdf.addPage([image.width, image.height]);
-                page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+                page.drawImage(image, {
+                    x: 0, y: 0,
+                    width: image.width,
+                    height: image.height
+                });
+
             } else if (ext === '.png') {
                 const image = await mergedPdf.embedPng(bytes);
                 const page = mergedPdf.addPage([image.width, image.height]);
-                page.drawImage(image, { x: 0, y: 0, width: image.width, height: image.height });
+                page.drawImage(image, {
+                    x: 0, y: 0,
+                    width: image.width,
+                    height: image.height
+                });
+
+            } else {
+                throw new Error(`Unsupported file: ${file.originalname}`);
             }
 
             fs.unlinkSync(filePath);
@@ -49,24 +61,41 @@ app.post('/merge', upload.array('files'), async (req, res) => {
 
     } catch (err) {
         console.error("MERGE ERROR:", err);
-        res.status(500).send('Error merging files');
+        res.status(500).send(err.message || 'Error merging files');
     }
 });
 
-/* ---------------- PLAYWRIGHT AUTOMATION ---------------- */
+/* ---------------- PLAYWRIGHT VIA NGROK ---------------- */
 app.post('/generate-pdf', async (req, res) => {
     try {
         const { systemId } = req.body;
 
-        const pdfBytes = await runAutomation(systemId);
+        if (!systemId) {
+            return res.status(400).send('systemId is required');
+        }
+
+        console.log("Forwarding to local automation:", systemId);
+
+        const response = await fetch('https://expertly-uncritical-annmarie.ngrok-free.dev/run-local-automation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ systemId })
+        });
+
+        if (!response.ok) {
+            const text = await response.text();
+            throw new Error(text || 'Local automation failed');
+        }
+
+        const arrayBuffer = await response.arrayBuffer();
 
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', 'attachment; filename=generated.pdf');
-        res.send(Buffer.from(pdfBytes));
+        res.send(Buffer.from(arrayBuffer));
 
     } catch (err) {
-        console.error("AUTOMATION ERROR:", err);
-        res.status(500).send(err.message);
+        console.error("REMOTE ERROR:", err);
+        res.status(500).send(err.message || 'Failed to connect to local automation');
     }
 });
 
