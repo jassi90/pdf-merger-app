@@ -5,8 +5,15 @@ const multer = require('multer');
 const { PDFDocument } = require('pdf-lib');
 const fs = require('fs');
 const path = require('path');
-const { runPart1DataEntry, DEFAULT_SYSTEM_IDS } = require('./part1-automation');
 const { runIllinoisAbpAutomation } = require('./part2-automation');
+
+let runPart1DataEntry = null;
+let DEFAULT_SYSTEM_IDS = [];
+try {
+    ({ runPart1DataEntry, DEFAULT_SYSTEM_IDS } = require('./part1-automation'));
+} catch (err) {
+    console.warn('Part1 automation module not loaded:', err.message);
+}
 
 const app = express();
 
@@ -108,24 +115,6 @@ app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
 });
 
-/* ---------------- PART1 DATA ENTRY ---------------- */
-app.post('/run-part1-data-entry', async (req, res) => {
-    try {
-        const { systemIds, headless } = req.body || {};
-
-        const summary = await runPart1DataEntry({
-            systemIds: Array.isArray(systemIds) && systemIds.length > 0 ? systemIds : DEFAULT_SYSTEM_IDS,
-            headless: Boolean(headless)
-        });
-
-        res.json(summary);
-    } catch (err) {
-        console.error('PART1 ERROR:', err);
-        res.status(500).json({
-            error: err.message || 'Failed to run Part1 data entry automation'
-        });
-    }
-});
 
 /* ---------------- PART2 DATA ENTRY ---------------- */
 app.post('/run-part2-data-entry', async (req, res) => {
