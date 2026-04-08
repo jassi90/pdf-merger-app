@@ -114,12 +114,22 @@ app.post('/run-part2-data-entry', async (req, res) => {
       'https://expertly-uncritical-annmarie.ngrok-free.dev/run-local-part2',
       {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
         body: JSON.stringify({ systemId: parsedSystemId })
       }
     );
 
-    const payload = await response.json();
+    const text = await response.text();
+    let payload;
+
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      throw new Error(`Part2 local server did not return JSON. Response was: ${text.slice(0, 200)}`);
+    }
 
     if (!response.ok) {
       throw new Error(payload.error || 'Local Part2 automation failed');

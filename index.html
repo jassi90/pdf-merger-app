@@ -589,11 +589,18 @@ if (part2Btn) {
         })
       });
 
-      const payload = await res.json();
+      const rawText = await res.text();
+let payload;
 
-      if (!res.ok) {
-        throw new Error(payload.error || `Request failed: ${res.status}`);
-      }
+try {
+  payload = JSON.parse(rawText);
+} catch {
+  throw new Error(`Server returned non-JSON response: ${rawText.slice(0, 200)}`);
+}
+
+if (!res.ok) {
+  throw new Error(payload.error || `Request failed: ${res.status}`);
+}
 
       status.className = payload.success ? 'success' : 'error';
       status.innerText = payload.success
