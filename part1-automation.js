@@ -10,7 +10,7 @@ const PORTAL_URL = 'https://portal.illinoisabp.com/';
 const ADMIN_LOGIN_URL = 'https://portal2.carbonsolutionsgroup.com/admin/login';
 
 function resolveCredentials() {
-  const abpUsername = process.env.ABP_Email;
+  const abpUsername = process.env.ABP_EMAIL;
   const abpPassword = process.env.ABP_PW;
   const portal2Email = process.env.CSG_ADMIN_EMAIL || process.env.EMAIL;
   const portal2Password = process.env.CSG_ADMIN_PASSWORD || process.env.PASSWORD;
