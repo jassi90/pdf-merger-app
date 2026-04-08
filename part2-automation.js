@@ -5,6 +5,7 @@ const pdfParse = require('pdf-parse');
 const fs = require('fs/promises');
 const fsSync = require('fs');
 const path = require('path');
+const os = require('os');
 const { spawn } = require('child_process');
 
 function formatDate(dateString) {
@@ -17,9 +18,24 @@ function formatDate(dateString) {
 }
 
 async function loginIllinois(page) {
+  const abpUser =
+    process.env.ABP_USERNAME ||
+    process.env.ABP_EMAIL ||
+    process.env.ABP_USER ||
+    process.env.SREC_USERNAME;
+  const abpPassword =
+    process.env.ABP_PASSWORD ||
+    process.env.ABP_PASS ||
+    process.env.ABP_PW ||
+    process.env.SREC_PASSWORD;
+
+  if (!abpUser || !abpPassword) {
+    throw new Error('Missing ABP credentials for Part2. Set ABP_USERNAME/ABP_EMAIL and ABP_PASSWORD/ABP_PASS.');
+  }
+
   await page.goto('https://portal.illinoisabp.com/');
-  await page.getByLabel('Username').fill(process.env.ABP_EMAIL);
-  await page.getByLabel('Password').fill(process.env.ABP_PW);
+  await page.getByLabel('Username').fill(abpUser);
+  await page.getByLabel('Password').fill(abpPassword);
   await page.getByRole('button', { name: 'Sign in' }).first().click();
   await page.waitForTimeout(2000);
 }
@@ -33,6 +49,9 @@ async function loginCSG(page) {
 }
 
 async function loadInstallerInfo(installerInfoPath) {
+  if (!installerInfoPath || !fsSync.existsSync(installerInfoPath)) {
+    throw new Error(`Installer info file not found: ${installerInfoPath}`);
+  }
   const workbook = new ExcelJs.Workbook();
   await workbook.xlsx.readFile(installerInfoPath);
   return workbook.getWorksheet('Sheet1');
@@ -451,10 +470,16 @@ async function processAndUploadScheduleA(page, systemId, systemName, options) {
   const filteredFilePath = path.resolve(downloadFolder, `${systemId}SchA_api.pdf`);
   await fs.writeFile(filteredFilePath, filteredPdfBytes);
 
-  await runPythonExtraction(pythonScriptPath, filteredFilePath, systemId);
+  let extractedText = '';
+  if (pythonScriptPath && fsSync.existsSync(pythonScriptPath)) {
+    await runPythonExtraction(pythonScriptPath, filteredFilePath, systemId);
+    const extractedTextFile = path.resolve(downloadFolder, `${systemId}extracted_text.txt`);
+    extractedText = await fs.readFile(extractedTextFile, 'utf-8');
+  } else {
+    const parsed = await pdfParse(filteredPdfBytes);
+    extractedText = parsed.text || '';
+  }
 
-  const extractedTextFile = path.resolve(downloadFolder, `${systemId}extracted_text.txt`);
-  const extractedText = await fs.readFile(extractedTextFile, 'utf-8');
   const pdfText = extractedText.toLowerCase().replace(/\s+/g, '');
 
   const matchesSystem = pdfText.includes(systemName.toLowerCase().replace(/\s+/g, ''));
@@ -495,9 +520,9 @@ async function processSystem(page, systemId, worksheet, options) {
 async function runIllinoisAbpAutomation(systemIds, options = {}) {
   const {
     headless = false,
-    installerInfoPath = 'C:/Users/jassi/OneDrive/Desktop/InstallerInfo.xlsx',
-    downloadFolder = 'C:/Users/jassi/Downloads',
-    pythonScriptPath = 'C:/Users/jassi/OneDrive/Desktop/CSG2/csg-automations/tests/MISC/script.py'
+    installerInfoPath = process.env.INSTALLER_INFO_PATH || path.resolve(__dirname, 'InstallerInfo.xlsx'),
+    downloadFolder = process.env.DOWNLOAD_FOLDER || os.tmpdir(),
+    pythonScriptPath = process.env.PYTHON_SCRIPT_PATH || ''
   } = options;
 
   const browser = await chromium.launch({

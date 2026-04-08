@@ -6,6 +6,7 @@ const { PDFDocument } = require('pdf-lib');
 const fs = require('fs');
 const path = require('path');
 const { runPart1DataEntry, DEFAULT_SYSTEM_IDS } = require('./part1-automation');
+const { runIllinoisAbpAutomation } = require('./part2-automation');
 
 const app = express();
 
@@ -122,6 +123,39 @@ app.post('/run-part1-data-entry', async (req, res) => {
         console.error('PART1 ERROR:', err);
         res.status(500).json({
             error: err.message || 'Failed to run Part1 data entry automation'
+        });
+    }
+});
+
+/* ---------------- PART2 DATA ENTRY ---------------- */
+app.post('/run-part2-data-entry', async (req, res) => {
+    try {
+        const { systemIds, headless } = req.body || {};
+        const parsedSystemIds = Array.isArray(systemIds)
+            ? systemIds.map((v) => Number(v)).filter((v) => Number.isFinite(v))
+            : [];
+
+        if (parsedSystemIds.length === 0) {
+            return res.status(400).json({ error: 'systemIds is required for Part2' });
+        }
+
+        const result = await runIllinoisAbpAutomation(parsedSystemIds, {
+            headless: Boolean(headless),
+            installerInfoPath: process.env.INSTALLER_INFO_PATH,
+            downloadFolder: process.env.DOWNLOAD_FOLDER,
+            pythonScriptPath: process.env.PYTHON_SCRIPT_PATH
+        });
+
+        res.json({
+            total: parsedSystemIds.length,
+            completed: result.filter((r) => r.status === 'success').length,
+            failed: result.filter((r) => r.status === 'failed').length,
+            results: result
+        });
+    } catch (err) {
+        console.error('PART2 ERROR:', err);
+        res.status(500).json({
+            error: err.message || 'Failed to run Part2 data entry automation'
         });
     }
 });

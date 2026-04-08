@@ -320,6 +320,14 @@
   #part1-status.success { color: var(--success); }
   #part1-status.error { color: var(--error); }
   #part1-status.busy { color: #2f6286; }
+  #part2-status {
+    margin-top: 14px;
+    min-height: 24px;
+    font-weight: 500;
+  }
+  #part2-status.success { color: var(--success); }
+  #part2-status.error { color: var(--error); }
+  #part2-status.busy { color: #2f6286; }
   .result-box {
     margin-top: 10px;
     border: 1px solid #dce6f0;
@@ -559,7 +567,8 @@ function parseIds(raw) {
     .filter(v => Number.isFinite(v));
 }
 
-document.getElementById('part1-btn').addEventListener('click', async () => {
+const part1Btn = document.getElementById('part1-btn');
+if (part1Btn) part1Btn.addEventListener('click', async () => {
   const raw = document.getElementById('part1-ids').value;
   const systemIds = parseIds(raw);
   const status = document.getElementById('part1-status');
@@ -597,8 +606,54 @@ document.getElementById('part1-btn').addEventListener('click', async () => {
     resultBox.style.display = 'block';
   }
 });
+
+const part2Btn = document.getElementById('part2-btn');
+if (part2Btn) part2Btn.addEventListener('click', async () => {
+  const raw = document.getElementById('part2-ids').value;
+  const systemIds = parseIds(raw);
+  const status = document.getElementById('part2-status');
+  const resultBox = document.getElementById('part2-result');
+
+  if (!systemIds.length) {
+    status.className = 'error';
+    status.innerText = 'Enter at least one System ID for Part2.';
+    resultBox.style.display = 'none';
+    return;
+  }
+
+  status.className = 'busy';
+  status.innerText = 'Running Part2 automation. This can take several minutes...';
+  resultBox.style.display = 'none';
+  resultBox.textContent = '';
+
+  try {
+    const res = await fetch('/run-part2-data-entry', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        systemIds,
+        headless: false
+      })
+    });
+
+    const payload = await res.json();
+    if (!res.ok) {
+      throw new Error(payload.error || `Request failed: ${res.status}`);
+    }
+
+    status.className = 'success';
+    status.innerText = `Completed: ${payload.completed}, failed: ${payload.failed}`;
+    resultBox.textContent = JSON.stringify(payload.results, null, 2);
+    resultBox.style.display = 'block';
+  } catch (err) {
+    console.error(err);
+    status.className = 'error';
+    status.innerText = `Part2 automation failed: ${err.message}`;
+    resultBox.textContent = err.stack || String(err);
+    resultBox.style.display = 'block';
+  }
+});
 </script>
 
 </body>
 </html>
-
