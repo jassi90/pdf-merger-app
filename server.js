@@ -110,12 +110,25 @@ app.post('/run-part2-data-entry', async (req, res) => {
       return res.status(400).json({ error: 'systemId is required for Part2' });
     }
 
-    const result = await runAutomation(parsedSystemId);
+    const response = await fetch(
+      'https://expertly-uncritical-annmarie.ngrok-free.dev/run-local-part2',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ systemId: parsedSystemId })
+      }
+    );
+
+    const payload = await response.json();
+
+    if (!response.ok) {
+      throw new Error(payload.error || 'Local Part2 automation failed');
+    }
 
     res.json({
       systemId: parsedSystemId,
-      success: result.success === true,
-      result
+      success: payload.success === true,
+      result: payload
     });
   } catch (err) {
     console.error('PART2 ERROR:', err);
