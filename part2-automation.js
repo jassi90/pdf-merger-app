@@ -29,8 +29,8 @@ async function runAutomation(systemId) {
         }
 
         await page.goto('https://portal.illinoisabp.com/');
-        await page.getByLabel('Username').fill(process.env.ILLINOIS_USERNAME);
-        await page.getByLabel('Password').fill(process.env.ILLINOIS_PASSWORD);
+        await page.getByLabel('Username').fill(process.env.ABP_EMAIL);
+        await page.getByLabel('Password').fill(process.env.ABP_PW);
         await page.getByRole('button', { name: 'Sign in' }).first().click();
 
         await page.waitForTimeout(2000);
