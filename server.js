@@ -5,7 +5,7 @@ const multer = require('multer');
 const { PDFDocument } = require('pdf-lib');
 const fs = require('fs');
 const path = require('path');
-const { runIllinoisAbpAutomation } = require('./part2-automation');
+const { runAutomation } = require('./part2-automation');
 
 const app = express();
 
@@ -103,23 +103,18 @@ app.post('/generate-pdf', async (req, res) => {
 /* ---------------- PART2 DATA ENTRY ---------------- */
 app.post('/run-part2-data-entry', async (req, res) => {
   try {
-    const { systemId, headless } = req.body || {};
+    const { systemId } = req.body || {};
     const parsedSystemId = Number(systemId);
 
     if (!Number.isFinite(parsedSystemId)) {
       return res.status(400).json({ error: 'systemId is required for Part2' });
     }
 
-    const result = await runIllinoisAbpAutomation(parsedSystemId, {
-      headless: Boolean(headless),
-      installerInfoPath: process.env.INSTALLER_INFO_PATH,
-      downloadFolder: process.env.DOWNLOAD_FOLDER,
-      pythonScriptPath: process.env.PYTHON_SCRIPT_PATH
-    });
+    const result = await runAutomation(parsedSystemId);
 
     res.json({
       systemId: parsedSystemId,
-      success: result.status === 'success',
+      success: result.success === true,
       result
     });
   } catch (err) {

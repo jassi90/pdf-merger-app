@@ -312,22 +312,17 @@
   #status.success { color: var(--success); }
   #status.error { color: var(--error); }
   #status.busy { color: #2f6286; }
-  #part1-status {
-    margin-top: 14px;
-    min-height: 24px;
-    font-weight: 500;
-  }
-  #part1-status.success { color: var(--success); }
-  #part1-status.error { color: var(--error); }
-  #part1-status.busy { color: #2f6286; }
+
   #part2-status {
     margin-top: 14px;
     min-height: 24px;
     font-weight: 500;
   }
+
   #part2-status.success { color: var(--success); }
   #part2-status.error { color: var(--error); }
   #part2-status.busy { color: #2f6286; }
+
   .result-box {
     margin-top: 10px;
     border: 1px solid #dce6f0;
@@ -376,7 +371,6 @@
   </section>
 
   <section class="grid">
-    <!-- ================= PDF MERGER ================= -->
     <div class="card">
       <h2>PDF & Image Merger</h2>
       <p>Drop files, arrange order by dragging, then merge into a single PDF.</p>
@@ -395,7 +389,6 @@
       </div>
     </div>
 
-    <!-- ================= PLAYWRIGHT AUTOMATION ================= -->
     <div class="card">
       <h2>Generate Demographic PDF</h2>
       <p>Enter the target system ID and download a fresh demographic report.</p>
@@ -412,14 +405,13 @@
       <p id="status"></p>
     </div>
 
-    <!-- ================= PART2 DATA ENTRY AUTOMATION ================= -->
     <div class="card">
       <h2>Part2</h2>
-      <p>Run the Illinois ABP Part2 workflow</p>
+      <p>Run the Illinois ABP Part2 workflow for a single System ID.</p>
 
       <div class="input-wrap">
-        <label for="part2-ids">System IDs</label>
-        <textarea id="part2-ids" ></textarea>
+        <label for="part2-id">System ID</label>
+        <input type="text" id="part2-id" placeholder="e.g. 171220" autocomplete="off">
       </div>
 
       <div class="actions">
@@ -433,8 +425,8 @@
 
   <p class="foot">Tip: drag files in the list to reorder before merging.</p>
 </main>
+
 <script>
-// ================= PDF MERGER =================
 const dropArea = document.getElementById('drop-area');
 const fileInput = document.getElementById('file-input');
 const fileList = document.getElementById('file-list');
@@ -482,7 +474,7 @@ function renderFiles() {
     li.addEventListener('dragover', e => e.preventDefault());
 
     li.addEventListener('drop', e => {
-      const fromIndex = e.dataTransfer.getData('text');
+      const fromIndex = Number(e.dataTransfer.getData('text'));
       const toIndex = index;
       const movedFile = files.splice(fromIndex, 1)[0];
       files.splice(toIndex, 0, movedFile);
@@ -494,12 +486,21 @@ function renderFiles() {
 }
 
 document.getElementById('merge-btn').addEventListener('click', async () => {
-  if (files.length === 0) return alert('Select files first');
+  if (files.length === 0) {
+    alert('Select files first');
+    return;
+  }
 
   const formData = new FormData();
   files.forEach(f => formData.append('files', f));
 
   const res = await fetch('/merge', { method: 'POST', body: formData });
+
+  if (!res.ok) {
+    const text = await res.text();
+    alert(text || 'Merge failed');
+    return;
+  }
 
   const blob = await res.blob();
   const url = window.URL.createObjectURL(blob);
@@ -516,8 +517,6 @@ clearBtn.addEventListener('click', () => {
   renderFiles();
 });
 
-
-// ================= PLAYWRIGHT AUTOMATION =================
 async function generatePDF() {
   const systemId = document.getElementById('systemId').value.trim();
   const status = document.getElementById('status');
@@ -538,7 +537,8 @@ async function generatePDF() {
     });
 
     if (!res.ok) {
-      throw new Error(`Request failed: ${res.status}`);
+      const text = await res.text();
+      throw new Error(text || `Request failed: ${res.status}`);
     }
 
     const blob = await res.blob();
@@ -554,105 +554,63 @@ async function generatePDF() {
   } catch (err) {
     console.error(err);
     status.className = 'error';
-    status.innerText = 'Error generating PDF.';
+    status.innerText = `Error generating PDF: ${err.message}`;
   }
 }
-
-// ================= PART1 DATA ENTRY =================
-function parseIds(raw) {
-  if (!raw.trim()) return [];
-  return raw
-    .split(/[\s,]+/)
-    .map(v => Number(v.trim()))
-    .filter(v => Number.isFinite(v));
-}
-
-const part1Btn = document.getElementById('part1-btn');
-if (part1Btn) part1Btn.addEventListener('click', async () => {
-  const raw = document.getElementById('part1-ids').value;
-  const systemIds = parseIds(raw);
-  const status = document.getElementById('part1-status');
-  const resultBox = document.getElementById('part1-result');
-
-  status.className = 'busy';
-  status.innerText = 'Running Part1 automation. This may take several minutes...';
-  resultBox.style.display = 'none';
-  resultBox.textContent = '';
-
-  try {
-    const res = await fetch('/run-part1-data-entry', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemIds: systemIds.length ? systemIds : undefined,
-        headless: false
-      })
-    });
-
-    const payload = await res.json();
-    if (!res.ok) {
-      throw new Error(payload.error || `Request failed: ${res.status}`);
-    }
-
-    status.className = 'success';
-    status.innerText = `Completed: ${payload.completed}, skipped: ${payload.skipped}, failed: ${payload.failed}`;
-    resultBox.textContent = JSON.stringify(payload.results, null, 2);
-    resultBox.style.display = 'block';
-  } catch (err) {
-    console.error(err);
-    status.className = 'error';
-    status.innerText = `Part1 automation failed: ${err.message}`;
-    resultBox.textContent = err.stack || String(err);
-    resultBox.style.display = 'block';
-  }
-});
 
 const part2Btn = document.getElementById('part2-btn');
-if (part2Btn) part2Btn.addEventListener('click', async () => {
-  const raw = document.getElementById('part2-ids').value;
-  const systemIds = parseIds(raw);
-  const status = document.getElementById('part2-status');
-  const resultBox = document.getElementById('part2-result');
 
-  if (!systemIds.length) {
-    status.className = 'error';
-    status.innerText = 'Enter at least one System ID for Part2.';
-    resultBox.style.display = 'none';
-    return;
-  }
+if (part2Btn) {
+  part2Btn.addEventListener('click', async () => {
+    const raw = document.getElementById('part2-id').value.trim();
+    const systemId = Number(raw);
+    const status = document.getElementById('part2-status');
+    const resultBox = document.getElementById('part2-result');
 
-  status.className = 'busy';
-  status.innerText = 'Running Part2 automation. This can take several minutes...';
-  resultBox.style.display = 'none';
-  resultBox.textContent = '';
-
-  try {
-    const res = await fetch('/run-part2-data-entry', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        systemIds,
-        headless: false
-      })
-    });
-
-    const payload = await res.json();
-    if (!res.ok) {
-      throw new Error(payload.error || `Request failed: ${res.status}`);
+    if (!Number.isFinite(systemId)) {
+      status.className = 'error';
+      status.innerText = 'Enter a valid single System ID for Part2.';
+      resultBox.style.display = 'none';
+      return;
     }
 
-    status.className = 'success';
-    status.innerText = `Completed: ${payload.completed}, failed: ${payload.failed}`;
-    resultBox.textContent = JSON.stringify(payload.results, null, 2);
-    resultBox.style.display = 'block';
-  } catch (err) {
-    console.error(err);
-    status.className = 'error';
-    status.innerText = `Part2 automation failed: ${err.message}`;
-    resultBox.textContent = err.stack || String(err);
-    resultBox.style.display = 'block';
-  }
-});
+    status.className = 'busy';
+    status.innerText = 'Running Part2 automation. This can take several minutes...';
+    resultBox.style.display = 'none';
+    resultBox.textContent = '';
+
+    try {
+      const res = await fetch('/run-part2-data-entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemId,
+          headless: false
+        })
+      });
+
+      const payload = await res.json();
+
+      if (!res.ok) {
+        throw new Error(payload.error || `Request failed: ${res.status}`);
+      }
+
+      status.className = payload.success ? 'success' : 'error';
+      status.innerText = payload.success
+        ? `Part2 completed for System ID ${payload.systemId}.`
+        : `Part2 failed for System ID ${payload.systemId}.`;
+
+      resultBox.textContent = JSON.stringify(payload.result, null, 2);
+      resultBox.style.display = 'block';
+    } catch (err) {
+      console.error(err);
+      status.className = 'error';
+      status.innerText = `Part2 automation failed: ${err.message}`;
+      resultBox.textContent = err.stack || String(err);
+      resultBox.style.display = 'block';
+    }
+  });
+}
 </script>
 
 </body>
