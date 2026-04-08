@@ -1,3 +1,5 @@
+require('dotenv').config();
+
 const { chromium } = require('playwright');
 const ExcelJs = require('exceljs');
 const { PDFDocument } = require('pdf-lib');
@@ -26,26 +28,22 @@ async function runAutomation(systemId) {
             return `${month}-${day}-${year}`;
         }
 
-        // LOGIN - ILLINOIS
         await page.goto('https://portal.illinoisabp.com/');
-        await page.getByLabel('Username').fill(process.env.ABP_EMAIL);
-        await page.getByLabel('Password').fill(process.env.ABP_PW);
+        await page.getByLabel('Username').fill(process.env.ILLINOIS_USERNAME);
+        await page.getByLabel('Password').fill(process.env.ILLINOIS_PASSWORD);
         await page.getByRole('button', { name: 'Sign in' }).first().click();
 
-        // LOGIN - CSG
         await page.waitForTimeout(2000);
         await page.goto('https://portal2.carbonsolutionsgroup.com/admin/login');
         await page.fill('input[type="email"]', process.env.EMAIL);
         await page.fill('input[type="password"]', process.env.PASSWORD);
         await page.getByRole('button', { name: 'Login' }).click();
 
-        // OPEN SYSTEM
         await page.waitForTimeout(2000);
         await page.goto(`https://portal2.carbonsolutionsgroup.com/admin/solar_panel_system/${systemId}/edit?step=2.2`);
         await page.getByRole('button', { name: 'Save', exact: true }).click();
         await page.waitForTimeout(2000);
         await page.waitForLoadState('load');
-
         await page.goto(`https://portal2.carbonsolutionsgroup.com/admin/solar_panel_system/${systemId}/checklist?onlyIncompleTasks=false&onlyMyTasks=false&showAll=false`);
 
         let ABPID = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(3) > td:nth-child(2)').innerText();
@@ -54,7 +52,6 @@ async function runAutomation(systemId) {
         const dateOfProject = await page.getByRole('row', { name: "Date of Project's Certificate" }).getByRole('cell').nth(1).innerText();
         const completationDate = await page.getByRole('row', { name: 'Construction Completion Date' }).getByRole('cell').nth(1).innerText();
         const Utility = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(11) > td:nth-child(2)').innerText();
-        const installerPart1 = await page.locator('#part1-section3 > fieldset > table > tbody > tr:nth-child(12) > td:nth-child(2)').innerText();
 
         let NON = await page.getByRole('row', { name: 'PJM Gats or MRETs Unit ID' }).getByRole('cell').nth(1).innerText();
         if (NON === 'MISSING!' || NON === '') {
@@ -179,7 +176,6 @@ async function runAutomation(systemId) {
         const Amount = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(11) > td:nth-child(2)').innerText();
         const E8 = Amount.replace(/\$|,/g, '');
 
-        // OPEN ILLINOIS APP
         await page.waitForTimeout(2000);
         await page.goto('https://portal.illinoisabp.com/');
         await page.getByRole('button', { name: 'View Project Applications' }).click();
@@ -395,7 +391,6 @@ async function runAutomation(systemId) {
         await page.getByLabel('Total Project Cost ($)*').fill(E8);
         await page.getByRole('button', { name: 'Save and Continue' }).click();
 
-        // SCHEDULE A UPLOAD
         const downloadFolder = process.env.DOWNLOAD_FOLDER;
         const pythonScriptPath = process.env.PYTHON_SCRIPT_PATH;
 
@@ -504,8 +499,7 @@ async function runAutomation(systemId) {
 
                                     uploadResult = {
                                         uploaded: true,
-                                        reason: 'Uploaded successfully',
-                                        filePath: filteredFilePath
+                                        reason: 'Uploaded successfully'
                                     };
                                 } else {
                                     uploadResult = {
