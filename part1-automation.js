@@ -1,550 +1,504 @@
-const fs = require('fs');
-const path = require('path');
-const ExcelJs = require('exceljs');
 const { chromium } = require('playwright');
+const ExcelJs = require('exceljs');
+const { PDFDocument } = require('pdf-lib');
+const pdfParse = require('pdf-parse');
+const fs = require('fs/promises');
+const fsSync = require('fs');
+const path = require('path');
+const { spawn } = require('child_process');
 
-const DEFAULT_SYSTEM_IDS = [];
-
-
-const PORTAL_URL = 'https://portal.illinoisabp.com/';
-const ADMIN_LOGIN_URL = 'https://portal2.carbonsolutionsgroup.com/admin/login';
-
-function resolveCredentials() {
-  const abpUsername = process.env.ABP_EMAIL;
-  const abpPassword = process.env.ABP_PW;
-  const portal2Email = process.env.CSG_ADMIN_EMAIL || process.env.EMAIL;
-  const portal2Password = process.env.CSG_ADMIN_PASSWORD || process.env.PASSWORD;
-
-  if (!abpUsername || !abpPassword) {
-    throw new Error(
-      'Missing ABP credentials. Set ABP_USERNAME (or ABP_EMAIL/ABP_USER/SREC_USERNAME) and ABP_PASSWORD (or ABP_PASS/SREC_PASSWORD).'
-    );
-  }
-
-  if (!portal2Email || !portal2Password) {
-    throw new Error('Missing Portal2 credentials. Set CSG_ADMIN_EMAIL/CSG_ADMIN_PASSWORD (or EMAIL/PASSWORD) in .env');
-  }
-
-  return { abpUsername, abpPassword, portal2Email, portal2Password };
-}
-
-function parseSystemIds(inputIds) {
-  if (Array.isArray(inputIds) && inputIds.length > 0) {
-    return inputIds
-      .map((value) => Number(value))
-      .filter((value) => Number.isFinite(value));
-  }
-
-  return [...DEFAULT_SYSTEM_IDS];
-}
-
-async function readCellText(page, selector) {
-  const locator = page.locator(selector);
-  const count = await locator.count();
-  if (count === 0) {
-    return '';
-  }
-  return (await locator.innerText()).trim();
-}
-
-async function clickIfVisible(page, roleName, options = {}) {
-  const locator = page.getByRole('button', { name: roleName, ...options });
-  if (await locator.isVisible().catch(() => false)) {
-    await locator.click();
-    return true;
-  }
-  return false;
-}
-
-async function safeGoto(page, url, waitMs = 1500) {
-  await page.goto(url, { waitUntil: 'domcontentloaded' });
-  await page.waitForTimeout(waitMs);
-}
-
-function parseAddress(addressRaw) {
-  const lines = String(addressRaw || '').split('\n').map((line) => line.trim()).filter(Boolean);
-  const street = (lines[0] || '').replace(/,/g, '').trim();
-
-  const cityStateZipChunk = lines[1] || '';
-  const cityParts = cityStateZipChunk.split(',');
-  const city = (cityParts[0] || '').trim();
-
-  const stateZip = (cityParts[1] || '').trim().split(/\s+/);
-  const state = (stateZip[0] || '').trim();
-  const zipCode = (stateZip[1] || '').trim();
-
-  return { street, city, state, zipCode };
-}
-
-function buildInterconnectionDate() {
-  const today = new Date();
-  const interconnectionDate = new Date();
-  interconnectionDate.setMonth(today.getMonth() + 6);
-
-  const month = String(interconnectionDate.getMonth() + 1).padStart(2, '0');
-  const day = String(interconnectionDate.getDate()).padStart(2, '0');
-  const year = interconnectionDate.getFullYear();
-
+function formatDate(dateString) {
+  const date = new Date(dateString);
+  if (isNaN(date.getTime())) return dateString;
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const year = date.getFullYear();
   return `${month}-${day}-${year}`;
 }
 
-async function loginAbp(page, creds) {
-  await safeGoto(page, PORTAL_URL);
-  await page.getByLabel('Username').fill(creds.abpUsername);
-  await page.getByLabel('Password').fill(creds.abpPassword);
+async function loginIllinois(page) {
+  await page.goto('https://portal.illinoisabp.com/');
+  await page.getByLabel('Username').fill(process.env.ABP_EMAIL);
+  await page.getByLabel('Password').fill(process.env.ABP_PW);
   await page.getByRole('button', { name: 'Sign in' }).first().click();
   await page.waitForTimeout(2000);
 }
 
-async function loginPortal2(page, creds) {
-  await safeGoto(page, ADMIN_LOGIN_URL);
-  await page.getByLabel('Email').fill(creds.portal2Email);
-  await page.getByLabel('Password').fill(creds.portal2Password);
+async function loginCSG(page) {
+  await page.goto('https://portal2.carbonsolutionsgroup.com/admin/login');
+  await page.fill('input[type="email"]', process.env.EMAIL);
+  await page.fill('input[type="password"]', process.env.PASSWORD);
   await page.getByRole('button', { name: 'Login' }).click();
   await page.waitForTimeout(2000);
 }
 
-async function extractRowsData(page) {
-  const tableSelector = '#part1-section4 > fieldset > table > tbody > tr:nth-child(6) > td:nth-child(2) > table';
-  const rows = await page.$$(tableSelector + ' tr');
-  const data = {};
-
-  for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
-    const cells = await rows[rowIndex].$$('td');
-    if (cells.length < 6) {
-      continue;
-    }
-
-    const sValue = (await cells[0].innerText()).trim();
-    const qValue = (await cells[1].innerText()).trim();
-    const tValue = (await cells[2].innerText()).trim();
-    const tiValue = (await cells[3].innerText()).trim();
-    const oValue = (await cells[4].innerText()).trim();
-    const bValue = (await cells[5].innerText()).trim();
-
-    data[`s${rowIndex + 1}`] = sValue;
-    data[`q${rowIndex + 1}`] = qValue;
-    data[`t${rowIndex + 1}`] = tValue;
-    data[`ti${rowIndex + 1}`] = String(Math.round(Number(tiValue || '0')));
-    data[`o${rowIndex + 1}`] = String(Math.round(Number(oValue || '0')));
-    data[`b${rowIndex + 1}`] = bValue;
-  }
-
-  return { rowsCount: rows.length, data };
-}
-
-async function extractSystemData(page, systemId) {
-  await safeGoto(page, `https://portal2.carbonsolutionsgroup.com/admin/solar_panel_system/${systemId}/checklist#status-info`, 2000);
-
-  const disclosureID = await readCellText(page, '#status-info > fieldset > table > tbody > tr:nth-child(2) > td:nth-child(2)');
-  const address = await readCellText(page, '#customer-info > fieldset > table > tbody > tr:nth-child(4) > td:nth-child(2)');
-  const latitude = await readCellText(page, '#part1-section1 > fieldset > table > tbody > tr:nth-child(8) > td:nth-child(2)');
-  const longitude = await readCellText(page, '#part1-section1 > fieldset > table > tbody > tr:nth-child(9) > td:nth-child(2)');
-  const parcelNumber = await readCellText(page, '#part1-section1 > fieldset > table > tbody > tr:nth-child(10) > td:nth-child(2)');
-
-  const projectType = await readCellText(page, '#part1-section2 > fieldset > table > tbody > tr:nth-child(2) > td:nth-child(2)');
-  const financing = await readCellText(page, '#part1-section2 > fieldset > table > tbody > tr:nth-child(3) > td:nth-child(2)');
-  const projectCategory = await readCellText(page, '#part1-section2 > fieldset > table > tbody > tr:nth-child(11) > td:nth-child(2)');
-
-  const ownerName = await readCellText(page, '#part1-section3 > fieldset > table > tbody > tr:nth-child(2) > td:nth-child(2)');
-  const ownerPhone = await readCellText(page, '#part1-section3 > fieldset > table > tbody > tr:nth-child(9) > td:nth-child(2)');
-  const ownerEmail = await readCellText(page, '#part1-section3 > fieldset > table > tbody > tr:nth-child(10) > td:nth-child(2)');
-
-  const installerName = await readCellText(page, '#part1-section3 > fieldset > table > tbody > tr:nth-child(12) > td:nth-child(2)');
-  const installerStreet = await readCellText(page, '#part1-section3 > fieldset > table > tbody > tr:nth-child(13) > td:nth-child(2)');
-  const installerSuite = await readCellText(page, '#part1-section3 > fieldset > table > tbody > tr:nth-child(14) > td:nth-child(2)');
-  const installerCity = await readCellText(page, '#part1-section3 > fieldset > table > tbody > tr:nth-child(15) > td:nth-child(2)');
-  const installerState = await readCellText(page, '#part1-section3 > fieldset > table > tbody > tr:nth-child(16) > td:nth-child(2)');
-  const installerZip = await readCellText(page, '#part1-section3 > fieldset > table > tbody > tr:nth-child(17) > td:nth-child(2)');
-  const installerPhone = await readCellText(page, '#part1-section3 > fieldset > table > tbody > tr:nth-child(18) > td:nth-child(2)');
-  const installerEmail = await readCellText(page, '#part1-section3 > fieldset > table > tbody > tr:nth-child(19) > td:nth-child(2)');
-  let graduates = await readCellText(page, '#part1-section3 > fieldset > table > tbody > tr:nth-child(20) > td:nth-child(2)');
-  if (graduates === 'MISSING!') {
-    graduates = '0';
-  }
-
-  const ac = await readCellText(page, '#part1-section4 > fieldset > table > tbody > tr:nth-child(1) > td:nth-child(2)');
-  const inverterEfficiency = await readCellText(page, '#part1-section4 > fieldset > table > tbody > tr:nth-child(2) > td:nth-child(2)');
-  let groundCoverRatio = await readCellText(page, '#part1-section4 > fieldset > table > tbody > tr:nth-child(3) > td:nth-child(2)');
-  if (groundCoverRatio) {
-    groundCoverRatio = '0.4';
-  }
-
-  const minimumShadingCriteria = await readCellText(page, '#part1-section4 > fieldset > table > tbody > tr:nth-child(4) > td:nth-child(2)');
-  const batteryBackup = await readCellText(page, '#part1-section4 > fieldset > table > tbody > tr:nth-child(5) > td:nth-child(2)');
-  const { rowsCount, data } = await extractRowsData(page);
-
-  const customCapacityFactor = await readCellText(page, '#part1-section5 > fieldset > table > tbody > tr:nth-child(1) > td:nth-child(2)');
-  const explanation = await readCellText(page, '#part1-section5 > fieldset > table > tbody > tr:nth-child(2) > td:nth-child(2)');
-  const utilityName = await readCellText(page, '#part1-section6 > fieldset > table > tbody > tr:nth-child(1) > td:nth-child(2)');
-  const projectdateRaw = await readCellText(page, '#part1-section6 > fieldset > table > tbody > tr:nth-child(2) > td:nth-child(2)');
-  const projectdate = Number(projectdateRaw || '0');
-
-  return {
-    disclosureID,
-    address,
-    latitude,
-    longitude,
-    parcelNumber,
-    projectType,
-    financing,
-    projectCategory,
-    ownerName,
-    ownerPhone,
-    ownerEmail,
-    installerName,
-    installerStreet,
-    installerSuite,
-    installerCity,
-    installerState,
-    installerZip,
-    installerPhone,
-    installerEmail,
-    graduates,
-    ac,
-    inverterEfficiency,
-    groundCoverRatio,
-    minimumShadingCriteria,
-    batteryBackup,
-    rowsCount,
-    data,
-    customCapacityFactor,
-    explanation,
-    utilityName,
-    projectdate
-  };
-}
-
-async function loadMappings(systemData) {
+async function loadInstallerInfo(installerInfoPath) {
   const workbook = new ExcelJs.Workbook();
-  const defaultPath = path.resolve(__dirname, 'InstallerInfo.xlsx');
-  const installerInfoPath = process.env.INSTALLER_INFO_PATH || defaultPath;
-
-  if (!fs.existsSync(installerInfoPath)) {
-    throw new Error(`Installer info workbook not found at: ${installerInfoPath}`);
-  }
-
   await workbook.xlsx.readFile(installerInfoPath);
-  const worksheet = workbook.getWorksheet('UtilityNames');
-  if (!worksheet) {
-    throw new Error('Worksheet "UtilityNames" not found in installer workbook.');
-  }
+  return workbook.getWorksheet('Sheet1');
+}
 
-  let utilityRow = -1;
-  let projectTypeRow = -1;
-  let financingRow = -1;
+function findInstallerRow(worksheet, docketValue) {
+  let output = { row: -1, column: -1 };
 
   worksheet.eachRow((row, rowNumber) => {
-    row.eachCell((cell) => {
-      if (cell.value === systemData.utilityName) {
-        utilityRow = rowNumber;
-      }
-      if (cell.value === systemData.projectType) {
-        projectTypeRow = rowNumber;
-      }
-      if (cell.value === systemData.financing) {
-        financingRow = rowNumber;
+    row.eachCell((cell, colNumber) => {
+      if (cell.value === docketValue) {
+        output = { row: rowNumber, column: colNumber };
       }
     });
   });
 
-  if (utilityRow < 0 || projectTypeRow < 0 || financingRow < 0) {
-    throw new Error('Could not map utility/projectType/financing values from InstallerInfo workbook.');
+  if (output.row === -1) {
+    throw new Error(`Installer "${docketValue}" not found in Excel file.`);
   }
 
   return {
-    ABPUtility: worksheet.getCell(utilityRow, 2).value,
-    ABPUtility2: worksheet.getCell(utilityRow, 3).value,
-    projectType1: worksheet.getCell(projectTypeRow, 2).value,
-    financing1: worksheet.getCell(financingRow, 2).value
+    I1: worksheet.getCell(output.row, 1).value,
+    I2: worksheet.getCell(output.row, 2).value,
+    I3: worksheet.getCell(output.row, 3).value,
+    I4: worksheet.getCell(output.row, 4).value,
+    I5: worksheet.getCell(output.row, 5).value,
+    I6: worksheet.getCell(output.row, 6).value,
+    I7: worksheet.getCell(output.row, 7).value,
+    I8: worksheet.getCell(output.row, 8).value
   };
 }
 
-async function openApplicationFromDisclosure(page, disclosureID) {
-  await safeGoto(page, PORTAL_URL);
-  await page.getByRole('button', { name: 'View Project Applications' }).click();
-  await page.getByRole('button', { name: 'New DG Project Application' }).click();
-  await page.getByLabel('FormID').fill(disclosureID);
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
-  await page.waitForTimeout(3500);
-
-  const disclosureIDCount = await page.getByRole('cell', { name: disclosureID }).count();
-  if (disclosureIDCount === 0) {
-    return { found: false };
-  }
-
-  await page.getByRole('cell', { name: disclosureID }).first().click();
-  await page.getByRole('button', { name: 'Start Application' }).click();
-  await page.waitForTimeout(1500);
-
-  if (await clickIfVisible(page, 'OK')) {
-    await page.waitForTimeout(1000);
-  }
-
-  if (await page.getByLabel('close').isVisible().catch(() => false)) {
-    await page.getByLabel('close').click();
-  }
-
-  return { found: true };
+function determineNetMetering(worksheet, utility) {
+  let nm = 'Yes';
+  worksheet.eachRow((row) => {
+    row.eachCell((cell) => {
+      if (cell.value === utility) nm = 'No';
+    });
+  });
+  return nm;
 }
 
-async function getApplicationId(page, disclosureID) {
-  await page.getByRole('button', { name: 'Disclosure Form Search' }).click();
-  await page.getByLabel('Form ID').fill(disclosureID);
-  await page.getByRole('button', { name: 'Search', exact: true }).click();
+async function getChecklistData(page, systemId, worksheet) {
+  await page.goto(`https://portal2.carbonsolutionsgroup.com/admin/solar_panel_system/${systemId}/edit?step=2.2`);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
   await page.waitForTimeout(2000);
 
-  const applicationText = await page.locator('div.mx-datagrid-data-wrapper').nth(1).innerText();
-  const applicationID = applicationText.replace(/[^0-9.-]/g, '').toString();
+  await page.goto(`https://portal2.carbonsolutionsgroup.com/admin/solar_panel_system/${systemId}/checklist?onlyIncompleTasks=false&onlyMyTasks=false&showAll=false`);
 
-  if (await page.getByRole('button', { name: 'Close page' }).isVisible().catch(() => false)) {
-    await page.getByRole('button', { name: 'Close page' }).click();
+  let ABPID = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(3) > td:nth-child(2)').innerText();
+  const AC = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(4) > td:nth-child(2)').innerText();
+  const systemName = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(8) > td:nth-child(2)').innerText();
+  const Utility = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(11) > td:nth-child(2)').innerText();
+  const installerPart1 = await page.locator('#part1-section3 > fieldset > table > tbody > tr:nth-child(12) > td:nth-child(2)').innerText();
+
+  const interconnectionDate = await page.getByRole('row', { name: 'Interconnection Approval Date' }).getByRole('cell').nth(1).innerText();
+  const projectOnlineDate = await page.getByRole('row', { name: 'Project Online Date' }).getByRole('cell').nth(1).innerText();
+  const dateOfProject = await page.getByRole('row', { name: "Date of Project's Certificate" }).getByRole('cell').nth(1).innerText();
+  const completationDate = await page.getByRole('row', { name: 'Construction Completion Date' }).getByRole('cell').nth(1).innerText();
+
+  let NON = await page.getByRole('row', { name: 'PJM Gats or MRETs Unit ID' }).getByRole('cell').nth(1).innerText();
+  if (!NON || NON === 'MISSING!') NON = 'NON123456';
+
+  const I9 = await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(10) > td:nth-child(2)').innerText();
+  const I10 = await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(12) > td:nth-child(2)').innerText();
+
+  const installer = findInstallerRow(worksheet, I10);
+  const NM = determineNetMetering(worksheet, Utility);
+
+  let I3 = installer.I3;
+  if (I3 == null) {
+    I3 = await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(4) > td:nth-child(2)').innerText();
   }
 
-  return applicationID;
+  const WDate = await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(13) > td:nth-child(2)').innerText();
+  const I11 = formatDate(WDate);
+
+  const demographics = {
+    D1: await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(16) > td:nth-child(2)').innerText(),
+    D2: await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(17) > td:nth-child(2)').innerText(),
+    D3: await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(18) > td:nth-child(2)').innerText(),
+    D4: await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(19) > td:nth-child(2)').innerText(),
+    D5: await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(20) > td:nth-child(2)').innerText(),
+    D6: await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(21) > td:nth-child(2)').innerText(),
+    D7: await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(22) > td:nth-child(2)').innerText(),
+    D8: await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(23) > td:nth-child(2)').innerText(),
+    D9: await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(26) > td:nth-child(2)').innerText(),
+    D10: await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(27) > td:nth-child(2)').innerText(),
+    D11: await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(28) > td:nth-child(2)').innerText()
+  };
+
+  const laborTable = '#part2-section3 > fieldset > table > tbody > tr:nth-child(31) > td:nth-child(2) > table';
+  const laborRows = await page.$$(laborTable + ' tr');
+  const laborData = [];
+  for (let i = 0; i < laborRows.length; i++) {
+    const cells = await laborRows[i].$$('td');
+    if (cells.length >= 2) {
+      laborData.push({
+        zip: (await cells[0].innerText()).trim(),
+        hours: (await cells[1].innerText()).trim()
+      });
+    }
+  }
+
+  const inverterTable = '#part2-section4 > fieldset > table > tbody > tr:nth-child(5) > td:nth-child(2) > table';
+  const inverterRows = await page.$$(inverterTable + ' tr');
+  const inverterData = [];
+
+  for (let i = 0; i < inverterRows.length; i++) {
+    const cells = await inverterRows[i].$$('td');
+    if (cells.length >= 4) {
+      inverterData.push({
+        model: (await cells[1].innerText()).trim(),
+        size: (await cells[2].innerText()).trim(),
+        quantity: (await cells[3].innerText()).trim()
+      });
+    }
+  }
+
+  const inverterModels = inverterData
+    .slice(1)
+    .map(x => `${x.model} = ${x.size} x ${x.quantity}`)
+    .join(', ');
+
+  const J1 = await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(33) > td:nth-child(2)').innerText();
+  const J2 = await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(34) > td:nth-child(2)').innerText();
+  const J3 = await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(35) > td:nth-child(2)').innerText();
+  const J4 = await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(37) > td:nth-child(2)').innerText();
+
+  const E1 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(2) > td:nth-child(2)').innerText();
+  const E2 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(3) > td:nth-child(2)').innerText();
+  const E3 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(5) > td:nth-child(2) > table > tbody > tr.bg-white > td:nth-child(1)').first().innerText();
+  const E5 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(7) > td:nth-child(2)').innerText();
+  const E6 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(8) > td:nth-child(2)').innerText();
+  const E7 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(10) > td:nth-child(2)').innerText();
+  const Amount = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(11) > td:nth-child(2)').innerText();
+  const E8 = Amount.replace(/\$|,/g, '');
+
+  return {
+    systemId,
+    ABPID,
+    AC: Number(AC),
+    Utility,
+    systemName,
+    installerPart1,
+    interconnectionDate,
+    projectOnlineDate,
+    dateOfProject,
+    completationDate,
+    NON,
+    I9,
+    I10,
+    I11,
+    installer: {
+      I1: String(installer.I1 ?? ''),
+      I2: String(installer.I2 ?? ''),
+      I3: String(I3 ?? ''),
+      I4: String(installer.I4 ?? ''),
+      I5: String(installer.I5 ?? ''),
+      I6: String(installer.I6 ?? ''),
+      I7: String(installer.I7 ?? ''),
+      I8: String(installer.I8 ?? '')
+    },
+    NM,
+    demographics,
+    laborData,
+    inverterModels,
+    J1,
+    J2,
+    J3,
+    J4,
+    E1,
+    E2,
+    E3,
+    E5,
+    E6,
+    E7,
+    E8
+  };
 }
 
-async function fillSection1(page, systemData, mapping) {
-  await page.getByRole('button', { name: 'Section 1 - Project Location' }).click();
-  await page.waitForTimeout(1500);
-
-  if (await clickIfVisible(page, 'Revisit')) {
-    await page.waitForTimeout(1500);
-    await page.getByRole('button', { name: 'OK' }).last().click();
-    await page.waitForTimeout(1500);
+async function revisitIfNeeded(page) {
+  if (await page.getByRole('button', { name: 'Save and Continue' }).isVisible()) {
+    const combo = page.getByRole('combobox').first();
+    if (await combo.isVisible()) {
+      await combo.selectOption('No');
+    }
   }
 
-  await page.getByLabel('Latitude').fill(systemData.latitude);
-  await page.getByLabel('Longitude').fill(systemData.longitude);
-  await page.getByLabel('Parcel Number').fill(systemData.parcelNumber);
-  await page.getByRole('button', { name: 'Save and Continue' }).click();
-  await page.waitForTimeout(1500);
-
-  if (await clickIfVisible(page, 'Revisit')) {
-    await page.waitForTimeout(1500);
+  if (await page.getByRole('button', { name: 'Revisit' }).isVisible()) {
+    await page.getByRole('button', { name: 'Revisit' }).click();
+    await page.waitForTimeout(2000);
     await page.getByRole('button', { name: 'OK' }).last().click();
-    await page.waitForTimeout(1500);
+    await page.waitForTimeout(2000);
   }
+}
 
-  await page.getByLabel('Project Type *').selectOption(String(mapping.projectType1));
-  await page.getByLabel('Financing Structure *').selectOption(String(mapping.financing1));
+async function openIllinoisApplication(page, ABPID) {
+  await page.goto('https://portal.illinoisabp.com/');
+  await page.getByRole('button', { name: 'View Project Applications' }).click();
+  await page.getByRole('button', { name: 'Clear Filters' }).click();
+  await page.waitForTimeout(5000);
 
-  await page.locator('text="No"').nth(0).click();
-  await page.locator('text="No"').nth(1).click();
-  await page.locator('.form-control').nth(2).selectOption('No');
-  await page.locator('.form-control').nth(3).selectOption(systemData.projectCategory);
-  await page.getByRole('button', { name: 'Save and Continue' }).click();
+  await page.getByRole('columnheader', { name: 'sort Project Application ID' }).getByLabel('filter', { exact: true }).click();
+  await page.getByRole('columnheader', { name: 'sort Project Application ID' }).getByLabel('filter', { exact: true }).fill(ABPID);
+
+  await page.waitForTimeout(5000);
+  await page.locator('.mx-name-actionButton13').click();
+  await page.getByRole('button', { name: 'Section 1 - Project Details' }).click();
   await page.waitForTimeout(4000);
 }
 
-async function fillSection2(page, systemData) {
-  if (await clickIfVisible(page, 'Revisit')) {
-    await page.waitForTimeout(1500);
-    await page.getByRole('button', { name: 'OK' }).last().click();
-    await page.waitForTimeout(1500);
-  }
-
-  const { street, city, state, zipCode } = parseAddress(systemData.address);
-
-  await page.getByLabel('Name of Owner or Point of').fill(systemData.ownerName);
-  await page.getByLabel('Street *').first().fill(street);
-  await page.getByLabel('City *').first().fill(city);
-  await page.getByLabel('State *').first().fill(state);
-  await page.getByLabel('Zip Code *').first().fill(zipCode);
-  await page.getByLabel('Phone *').first().fill(systemData.ownerPhone);
-  await page.getByLabel('Email', { exact: true }).fill(systemData.ownerEmail);
-
-  await page.locator('.radio').nth(0).click();
-  await page.getByLabel('Legal Business Name *').fill(systemData.installerName);
-  await page.getByLabel('Street *').nth(1).fill(systemData.installerStreet);
-  await page.getByLabel('Apartment or Suite').nth(1).fill(systemData.installerSuite);
-  await page.getByLabel('City *').nth(1).fill(systemData.installerCity);
-  await page.getByLabel('State *').nth(1).fill(systemData.installerState);
-  await page.getByLabel('Zip Code *').nth(1).fill(systemData.installerZip);
-  await page.getByLabel('Phone *').nth(1).fill(systemData.installerPhone);
-  await page.getByLabel('Email *').fill(systemData.installerEmail);
-
-  await page.waitForTimeout(1000);
-  await page.getByText('Yes').nth(1).click();
-  await page.getByLabel('Number of Graduates of Job').fill(systemData.graduates);
+async function fillIllinoisForms(page, data) {
+  await revisitIfNeeded(page);
   await page.getByRole('button', { name: 'Save and Continue' }).click();
-  await page.waitForTimeout(1500);
-}
-
-async function fillSection3(page, systemData) {
-  if (await clickIfVisible(page, 'Revisit')) {
-    await page.waitForTimeout(1500);
-    await page.getByRole('button', { name: 'Continue' }).click();
-    await page.waitForTimeout(1500);
-  }
-
-  const deleteSelector = '.btn.mx-button.mx-name-actionButton5.spacing-outer-left.btn-sm.btn-default';
-  const totalDelete = await page.locator(deleteSelector).count();
-  for (let idx = 0; idx < totalDelete; idx++) {
-    await page.locator(deleteSelector).first().click();
-    await page.waitForTimeout(1000);
-  }
-
-  await page.locator('.form-control').nth(1).fill(systemData.ac);
-  await page.getByLabel('Inverter Efficiency (%) *').fill(systemData.inverterEfficiency);
-  await page.getByLabel('Ground Cover Ratio *').fill(systemData.groundCoverRatio);
-  await page.waitForTimeout(1000);
-  await page.getByLabel(systemData.minimumShadingCriteria).check();
-  await page.getByRole('combobox').selectOption(systemData.batteryBackup);
-
-  for (let idx = 2; idx <= systemData.rowsCount; idx++) {
-    await page.getByRole('button', { name: 'Add' }).click();
-
-    const sValue = systemData.data[`s${idx}`] || '';
-    const qValue = systemData.data[`q${idx}`] || '';
-    const tValue = systemData.data[`t${idx}`] || '';
-    const tiValue = systemData.data[`ti${idx}`] || '';
-    const oValue = systemData.data[`o${idx}`] || '';
-    const bValue = systemData.data[`b${idx}`] || 'No';
-
-    await page.waitForTimeout(1500);
-    await page.getByPlaceholder('to 1000').click();
-    await page.keyboard.type(sValue, { delay: 60 });
-
-    await page.getByPlaceholder('Greater than').click();
-    await page.keyboard.type(qValue, { delay: 60 });
-
-    await page.getByPlaceholder('to 90').click();
-    await page.keyboard.type(tiValue, { delay: 60 });
-
-    await page.getByPlaceholder('to 359 inclusive').click();
-    await page.keyboard.type(oValue, { delay: 60 });
-
-    if (tValue === 'Fixed - Roof Mount') {
-      await page.getByLabel('Roof').check();
-      await page.getByLabel('Tracking Type *').selectOption('Fixed_Mount___Roof_Mounted');
-    } else {
-      await page.getByLabel('Ground', { exact: true }).check();
-      await page.getByLabel('Tracking Type *').selectOption('Fixed_Mount');
-    }
-
-    await page.getByLabel('Are you using Bifacial Panels').getByLabel(bValue).check();
-    if (bValue === 'Yes') {
-      await page.getByPlaceholder('0 to 1', { exact: true }).fill('0.4');
-    }
-
-    await page.getByRole('button', { name: 'Save', exact: true }).click();
-  }
-
-  await page.getByRole('button', { name: 'Save and Continue' }).click();
-  await page.waitForTimeout(3000);
-}
-
-async function fillSection5(page, systemData) {
-  await page.goBack();
-  await page.getByRole('button', { name: 'Section 5 - REC Estimate' }).click();
-  await page.waitForTimeout(1500);
-
-  if (await clickIfVisible(page, 'Revisit')) {
-    await page.waitForTimeout(1500);
-    await page.getByRole('button', { name: 'OK' }).last().click();
-    await page.waitForTimeout(1500);
-  }
-
-  await page.getByLabel('PVWatts').check();
-  await page.getByRole('button', { name: 'Calculate' }).click();
-  await page.waitForTimeout(3000);
-  await page.getByRole('button', { name: 'OK' }).last().click();
-
-  await page.getByLabel('Custom Capacity Factor').check();
-  await page.getByPlaceholder('Example: for 50.5%, enter').fill(systemData.customCapacityFactor);
-  await page.getByLabel('Explanation of Custom').fill(systemData.explanation);
-  await page.getByRole('button', { name: 'Calculate' }).click();
-  await page.waitForTimeout(3000);
-  await page.getByRole('button', { name: 'OK' }).last().click();
-
-  const recErrorChecks = await page.locator('input[type="checkbox"]').count();
-  if (recErrorChecks > 0) {
-    await page.locator('input[type="checkbox"]').first().check();
-    await page.waitForTimeout(1000);
-  }
-
-  await page.getByRole('button', { name: 'Save and Continue' }).click();
-  await page.waitForTimeout(1200);
-  await page.getByRole('button', { name: 'OK' }).click();
-}
-
-async function fillSection6(page, systemData, mapping) {
-  if (await clickIfVisible(page, 'Revisit')) {
-    await page.waitForTimeout(1500);
-    await page.getByRole('button', { name: 'OK' }).last().click();
-    await page.waitForTimeout(1500);
-  }
-
-  await page.locator('.form-control').nth(0).selectOption(String(mapping.ABPUtility));
   await page.waitForTimeout(2000);
+  await page.getByRole('button', { name: 'OK' }).last().click();
 
-  if (systemData.projectdate === 0) {
-    await page.locator('text="No"').first().click();
-  } else {
-    await page.locator('text="Yes"').first().click();
-  }
+  await revisitIfNeeded(page);
 
-  const count = await page.locator('.form-control').count();
-  await page.locator('.form-control').nth(1).click();
-  if (count === 7 && mapping.ABPUtility2) {
-    await page.waitForTimeout(1000);
-    await page.locator('.form-control').nth(1).selectOption(String(mapping.ABPUtility2));
-    await page.waitForTimeout(1000);
-    await page.locator('.form-control').nth(2).click();
-  }
-
-  await page.keyboard.press('Control+A');
-  await page.keyboard.press('Backspace');
-  await page.keyboard.type(buildInterconnectionDate(), { delay: 50 });
-
+  await page.getByLabel('Interconnection Approval Date').fill(data.interconnectionDate);
+  await page.getByLabel('Project Online Date *').fill(data.projectOnlineDate);
+  await page.getByLabel('Date of Project’s Certificate').fill(data.dateOfProject);
+  await page.getByLabel('Date on which Construction').fill(data.completationDate);
+  await page.getByLabel('REC Tracking System *').selectOption('GATS');
+  await page.getByLabel('PJM GATS or M-RETS Unit ID *').fill(data.NON);
+  await page.getByLabel('Name on REC Tracking System').fill('Carbon Solutions SREC LLC');
+  await page.getByRole('combobox').nth(2).selectOption(data.NM);
   await page.getByRole('button', { name: 'Save and Continue' }).click();
-  await page.waitForTimeout(2500);
+
+  await revisitIfNeeded(page);
+
+  await page.getByLabel('Legal Business Name *').fill(data.installer.I1);
+  await page.getByLabel('Street *').fill(data.installer.I2);
+  await page.getByLabel('Apartment or Suite').fill(data.installer.I3);
+  await page.getByLabel('City *').fill(data.installer.I4);
+  await page.getByLabel('State *').fill(data.installer.I5);
+  await page.getByLabel('Zip Code *').fill(data.installer.I6);
+  await page.getByLabel('Phone *').fill(data.installer.I7);
+  await page.getByLabel('Email *').fill(data.installer.I8);
+  await page.getByLabel('Name of the Qualified Person').fill(data.I9);
+  await page.getByLabel('ICC Docket Number for the').fill(data.I10);
+  await page.getByRole('combobox').nth(1).selectOption('No');
+  await page.getByPlaceholder('mm-dd-yyyy').fill(data.I11);
+
+  const d = data.demographics;
+  if (d.D1 !== '0') await page.getByLabel('White').fill(d.D1);
+  if (d.D2 !== '0') await page.getByLabel('Black or African American').fill(d.D2);
+  if (d.D3 !== '0') await page.getByLabel('American Indian or Alaskan').fill(d.D3);
+  if (d.D4 !== '0') await page.getByLabel('Asian').fill(d.D4);
+  if (d.D5 !== '0') await page.getByLabel('Hawaiian or Other Pacific').fill(d.D5);
+  if (d.D6 !== '0') await page.getByLabel('More than one Race').fill(d.D6);
+  if (d.D7 !== '0') await page.getByLabel('Some Other Race').fill(d.D7);
+  if (d.D8 !== '0') await page.getByLabel('Employee Declines to Identify', { exact: true }).fill(d.D8);
+
+  await page.getByLabel('Hispanic or Latino', { exact: true }).fill(d.D9);
+  await page.getByLabel('Not Hispanic or Latino').fill(d.D10);
+  await page.getByLabel('Employee Declines to Identify Ethnicity').fill(d.D11);
+
+  if (d.D9 === '0') {
+    await page.getByLabel('Hispanic or Latino', { exact: true }).click();
+    await page.getByLabel('Hispanic or Latino', { exact: true }).press('Control+A');
+    await page.getByLabel('Hispanic or Latino', { exact: true }).press('Backspace');
+  }
+  if (d.D10 === '0') {
+    await page.getByLabel('Not Hispanic or Latino').click();
+    await page.getByLabel('Not Hispanic or Latino').press('Control+A');
+    await page.getByLabel('Not Hispanic or Latino').press('Backspace');
+  }
+  if (d.D11 === '0') {
+    await page.getByLabel('Employee Declines to Identify Ethnicity').click();
+    await page.getByLabel('Employee Declines to Identify Ethnicity').press('Control+A');
+    await page.getByLabel('Employee Declines to Identify Ethnicity').press('Backspace');
+  }
+
+  const demographicsConcat = d.D1 + d.D2 + d.D3 + d.D4 + d.D5 + d.D6 + d.D7 + d.D8 + d.D9 + d.D10 + d.D11;
+  if (demographicsConcat === '00000000000') {
+    await page.getByLabel('Employee Declines to Identify', { exact: true }).fill('1');
+    await page.getByLabel('Employee Declines to Identify Ethnicity').fill('1');
+  }
+
+  if (data.laborData.length > 1 && Number(data.laborData[1].zip) > 0) {
+    await page.getByLabel('Yes').nth(2).check();
+    for (let i = 1; i < data.laborData.length; i++) {
+      await page.getByRole('button', { name: 'Add Zip Code' }).click();
+      await page.getByLabel('Zip', { exact: true }).fill(data.laborData[i].zip);
+      await page.getByLabel('Hours', { exact: true }).fill(data.laborData[i].hours);
+      await page.getByRole('button', { name: 'Save', exact: true }).click();
+    }
+  }
+
+  await page.getByLabel('Solar Training Pipeline').fill(data.J1);
+  await page.getByLabel('Craft Apprenticeship Program').fill(data.J2);
+  await page.getByLabel('Multi-Cultural Job Training').fill(data.J3);
+  await page.locator('div').filter({ hasText: /^Total number of graduates of Job Training programs who worked on the project$/ }).getByRole('textbox').fill(data.J4);
+  await page.getByRole('button', { name: 'Save and Continue' }).click();
+
+  await revisitIfNeeded(page);
+
+  await page.getByLabel('Module Manufacturer / Make*').fill(data.E1);
+  await page.getByLabel('Module Model*').fill(data.E2);
+  await page.getByLabel('Inverter Manufacturer / Make*').fill(data.E3);
+  await page.getByLabel('Inverter Model*').fill(data.inverterModels);
+
+  if (data.E3.includes('Enphase')) {
+    await page.locator('div').filter({ hasText: /^ANSI C\.12\+\/- 5%$/ }).getByRole('combobox').selectOption(data.AC > 10 ? 'ANSI' : '____5_');
+    await page.getByLabel('Meter Manufacturer / Make*').fill(data.E3);
+    await page.getByLabel('Meter Model*').fill('Envoy');
+  } else if (data.AC > 10) {
+    await page.locator('div').filter({ hasText: /^ANSI C\.12\+\/- 5%$/ }).getByRole('combobox').selectOption('ANSI');
+    await page.getByLabel('Meter Manufacturer / Make*').fill(data.E5);
+    await page.getByLabel('Meter Model*').fill(data.E6);
+  } else if (data.E3 === 'APSystems') {
+    await page.locator('div').filter({ hasText: /^ANSI C\.12\+\/- 5%$/ }).getByRole('combobox').selectOption('____5_');
+    await page.getByLabel('Meter Manufacturer / Make*').fill(data.E3);
+    await page.getByLabel('Meter Model*').fill('ECU');
+  } else if (data.E3 === 'Hoymiles') {
+    await page.locator('div').filter({ hasText: /^ANSI C\.12\+\/- 5%$/ }).getByRole('combobox').selectOption('____5_');
+    await page.getByLabel('Meter Manufacturer / Make*').fill(data.E3);
+    await page.getByLabel('Meter Model*').fill('DTU');
+  } else {
+    await page.locator('div').filter({ hasText: /^ANSI C\.12\+\/- 5%$/ }).getByRole('combobox').selectOption('____5_');
+    await page.getByLabel('Meter Manufacturer / Make*').fill(data.E3);
+    await page.getByLabel('Meter Model*').fill(data.inverterModels);
+  }
+
+  await page.getByLabel('Inverter Details').fill('');
+  await page.getByRole('combobox').nth(2).selectOption(data.E7);
+  await page.getByLabel('Total Project Cost ($)*').fill(data.E8);
+  await page.getByRole('button', { name: 'Save and Continue' }).click();
 }
 
-async function runSingleSystem(page, systemId) {
-  const systemData = await extractSystemData(page, systemId);
-  if (!systemData.disclosureID) {
-    return { systemId, status: 'failed', reason: 'Disclosure ID not found' };
-  }
+async function runPythonExtraction(pythonScriptPath, filteredFilePath, systemId) {
+  return new Promise((resolve, reject) => {
+    const pythonProcess = spawn('python', [pythonScriptPath, filteredFilePath, String(systemId)], { shell: true });
 
-  const mapping = await loadMappings(systemData);
+    pythonProcess.on('exit', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Python script exited with code ${code}`));
+    });
 
-  const openResult = await openApplicationFromDisclosure(page, systemData.disclosureID);
-  if (!openResult.found) {
-    return { systemId, status: 'skipped', reason: `${systemData.disclosureID} not found` };
-  }
-
-  const applicationID = await getApplicationId(page, systemData.disclosureID);
-  await page.getByRole('columnheader', { name: 'sort Project Application ID ?' }).getByRole('spinbutton').fill(applicationID);
-  await page.waitForTimeout(1500);
-
-  const submittedExists = (await page.locator('text=Submitted').count()) > 0;
-  if (submittedExists) {
-    return { systemId, status: 'skipped', reason: 'Already submitted', applicationID };
-  }
-
-  await page.locator('#mxui_widget_VerticalScrollContainer_0 > div.mx-scrollcontainer-middle.region-content > div > div.mx-placeholder > div > div > div > div.mx-dataview.mx-name-dataView2.form-horizontal > div > div > div > div.mx-name-dataGrid22.widget-datagrid.widget-datagrid-selectable-rows.widget-datagrid-selection-method-click > div.widget-datagrid-content.sticky-table-container > div.widget-datagrid-grid.table > div > div:nth-child(2) > div:nth-child(6) > div > div > div > div.col-lg.col-md.col > div > button').click();
-
-  await page.waitForTimeout(1500);
-
-  await fillSection1(page, systemData, mapping);
-  await fillSection2(page, systemData);
-  await fillSection3(page, systemData);
-  await fillSection5(page, systemData);
-  await fillSection6(page, systemData, mapping);
-
-  return { systemId, status: 'completed', applicationID };
+    pythonProcess.on('error', reject);
+  });
 }
 
-async function runPart1DataEntry(options = {}) {
-  const { headless = false, systemIds } = options;
-  const creds = resolveCredentials();
-  const ids = parseSystemIds(systemIds);
+async function processAndUploadScheduleA(page, systemId, systemName, options) {
+  const { downloadFolder, pythonScriptPath } = options;
 
-  if (ids.length === 0) {
-    throw new Error('No valid system IDs supplied.');
+  await page.goto(`https://portal2.carbonsolutionsgroup.com/admin/solar_panel_system/${systemId}/checklist?onlyIncompleTasks=false&onlyMyTasks=false&showAll=false`);
+  await page.getByRole('link', { name: 'Post Install File Uploads' }).click();
+  await page.waitForTimeout(5000);
+
+  const totalFiles = await page.locator('.grid.grid-cols-3.gap-4.items-start.mb-1').nth(0).locator('.flex-auto svg').count();
+  const totalShA = await page.locator('.grid.grid-cols-3.gap-4.items-start.mb-1').nth(1).locator('.flex-auto svg').count();
+
+  if (!(totalFiles > 0 && totalShA === 0)) {
+    return { uploaded: false, reason: 'No eligible files found' };
   }
+
+  const downloadedFiles = [];
+
+  for (let j = 0; j < totalFiles; j++) {
+    try {
+      const downloadPromise = page.waitForEvent('download', { timeout: 10000 });
+      await page.locator('.grid.grid-cols-3.gap-4.items-start.mb-1').nth(0).locator('.flex-auto svg').nth(j).click();
+
+      const download = await downloadPromise;
+      const filePath = path.resolve(downloadFolder, `${systemId}_SchA_${j}.pdf`);
+      await download.saveAs(filePath);
+      downloadedFiles.push(filePath);
+    } catch (error) {
+      console.warn(`Skipping file ${j + 1}: ${error.message}`);
+    }
+  }
+
+  const mergedPdf = await PDFDocument.create();
+  const outputFilePath = path.resolve(downloadFolder, `${systemId}_SchA.pdf`);
+
+  for (const file of downloadedFiles) {
+    try {
+      const stats = await fs.stat(file);
+      if (stats.size === 0) continue;
+
+      const pdfBytes = await fs.readFile(file);
+      const pdf = await PDFDocument.load(pdfBytes);
+      const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+      copiedPages.forEach(p => mergedPdf.addPage(p));
+      await fs.unlink(file);
+    } catch (err) {
+      console.warn(`Failed processing ${file}: ${err.message}`);
+    }
+  }
+
+  const mergedPdfBytes = await mergedPdf.save();
+  await fs.writeFile(outputFilePath, mergedPdfBytes);
+
+  const filteredPdf = await PDFDocument.create();
+  const originalPdf = await PDFDocument.load(mergedPdfBytes);
+  const textToCheck = ['Generator Owner’s Consent'];
+
+  for (let i = 0; i < originalPdf.getPageCount(); i++) {
+    const singlePagePdf = await PDFDocument.create();
+    const [singlePage] = await singlePagePdf.copyPages(originalPdf, [i]);
+    singlePagePdf.addPage(singlePage);
+
+    const pageBytes = await singlePagePdf.save();
+    const pageData = await pdfParse(pageBytes);
+
+    if (textToCheck.some(text => pageData.text.includes(text))) {
+      const [copiedPage] = await filteredPdf.copyPages(originalPdf, [i]);
+      filteredPdf.addPage(copiedPage);
+    }
+  }
+
+  const filteredPdfBytes = await filteredPdf.save();
+  const filteredFilePath = path.resolve(downloadFolder, `${systemId}SchA_api.pdf`);
+  await fs.writeFile(filteredFilePath, filteredPdfBytes);
+
+  await runPythonExtraction(pythonScriptPath, filteredFilePath, systemId);
+
+  const extractedTextFile = path.resolve(downloadFolder, `${systemId}extracted_text.txt`);
+  const extractedText = await fs.readFile(extractedTextFile, 'utf-8');
+  const pdfText = extractedText.toLowerCase().replace(/\s+/g, '');
+
+  const matchesSystem = pdfText.includes(systemName.toLowerCase().replace(/\s+/g, ''));
+
+  if (matchesSystem) {
+    await page.getByLabel('Tracking System Approval -').setInputFiles(filteredFilePath);
+    await page.waitForTimeout(10000);
+    await page.getByRole('button', { name: 'Save', exact: true }).click();
+    await page.waitForTimeout(15000);
+  }
+
+  await Promise.allSettled([
+    fs.unlink(filteredFilePath),
+    fs.unlink(outputFilePath)
+  ]);
+
+  return {
+    uploaded: matchesSystem,
+    reason: matchesSystem ? 'Uploaded successfully' : 'Verification failed'
+  };
+}
+
+async function processSystem(page, systemId, worksheet, options) {
+  const data = await getChecklistData(page, systemId, worksheet);
+  await openIllinoisApplication(page, data.ABPID);
+  await fillIllinoisForms(page, data);
+
+  const scheduleAResult = await processAndUploadScheduleA(page, systemId, data.systemName, options);
+
+  return {
+    systemId,
+    ABPID: data.ABPID,
+    status: 'success',
+    scheduleAResult
+  };
+}
+
+async function runIllinoisAbpAutomation(systemIds, options = {}) {
+  const {
+    headless = false,
+    installerInfoPath = 'C:/Users/jassi/OneDrive/Desktop/InstallerInfo.xlsx',
+    downloadFolder = 'C:/Users/jassi/Downloads',
+    pythonScriptPath = 'C:/Users/jassi/OneDrive/Desktop/CSG2/csg-automations/tests/MISC/script.py'
+  } = options;
 
   const browser = await chromium.launch({
     headless,
@@ -552,35 +506,38 @@ async function runPart1DataEntry(options = {}) {
   });
 
   const page = await browser.newPage();
-  const results = [];
 
   try {
-    await loginAbp(page, creds);
-    await loginPortal2(page, creds);
+    const worksheet = await loadInstallerInfo(installerInfoPath);
 
-    for (const systemId of ids) {
+    await loginIllinois(page);
+    await loginCSG(page);
+
+    const results = [];
+    for (const systemId of systemIds) {
       try {
-        const result = await runSingleSystem(page, systemId);
+        const result = await processSystem(page, systemId, worksheet, {
+          downloadFolder,
+          pythonScriptPath
+        });
         results.push(result);
+        console.log(`✅ Finished ${systemId}`);
       } catch (error) {
+        console.error(`❌ Failed ${systemId}: ${error.message}`);
         results.push({
           systemId,
           status: 'failed',
-          reason: error.message
+          error: error.message
         });
       }
     }
 
-    return {
-      total: ids.length,
-      completed: results.filter((r) => r.status === 'completed').length,
-      skipped: results.filter((r) => r.status === 'skipped').length,
-      failed: results.filter((r) => r.status === 'failed').length,
-      results
-    };
-  } finally {
     await browser.close();
+    return results;
+  } catch (err) {
+    await browser.close();
+    throw err;
   }
 }
 
-module.exports = { runPart1DataEntry, DEFAULT_SYSTEM_IDS };
+module.exports = { runIllinoisAbpAutomation };
