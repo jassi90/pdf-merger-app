@@ -3,25 +3,15 @@ const path = require('path');
 const ExcelJs = require('exceljs');
 const { chromium } = require('playwright');
 
-const DEFAULT_SYSTEM_IDS = [
-  143336, 122823, 158690, 142825, 143061, 137289, 162110,
-  160180, 162077, 161589, 161198, 142922, 162127, 157144
-];
+const DEFAULT_SYSTEM_IDS = [];
+
 
 const PORTAL_URL = 'https://portal.illinoisabp.com/';
 const ADMIN_LOGIN_URL = 'https://portal2.carbonsolutionsgroup.com/admin/login';
 
 function resolveCredentials() {
-  const abpUsername =
-    process.env.ABP_USERNAME ||
-    process.env.ABP_EMAIL ||
-    process.env.ABP_USER ||
-    process.env.SREC_USERNAME;
-  const abpPassword =
-    process.env.ABP_PASSWORD ||
-    process.env.ABP_PASS ||
-    process.env.SREC_PASSWORD;
-
+  const abpUsername = process.env.ABP_Email;
+  const abpPassword = process.env.ABP_PW;
   const portal2Email = process.env.CSG_ADMIN_EMAIL || process.env.EMAIL;
   const portal2Password = process.env.CSG_ADMIN_PASSWORD || process.env.PASSWORD;
 
