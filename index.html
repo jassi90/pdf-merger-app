@@ -2,106 +2,401 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Automation Tools</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Automation Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
 <style>
+  :root {
+    --bg: #f3f6f9;
+    --paper: #ffffff;
+    --text: #17232f;
+    --muted: #5f6f7e;
+    --line: #d3dee8;
+    --brand: #0a7f8a;
+    --brand-strong: #066876;
+    --accent: #ef9d28;
+    --soft: #e6f3f4;
+    --success: #167a39;
+    --error: #b33535;
+    --radius-lg: 20px;
+    --radius-md: 14px;
+    --shadow: 0 14px 36px rgba(17, 36, 56, 0.12);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
   body {
-    font-family: Arial;
-    max-width: 800px;
-    margin: 30px auto;
+    margin: 0;
+    font-family: "Outfit", sans-serif;
+    color: var(--text);
+    background:
+      radial-gradient(circle at 0% 0%, #d5eef4 0%, transparent 36%),
+      radial-gradient(circle at 100% 100%, #ffe8c6 0%, transparent 42%),
+      var(--bg);
+    min-height: 100vh;
+    padding: 28px 16px 40px;
   }
 
-  h2, h3 {
-    text-align: center;
+  .shell {
+    max-width: 1020px;
+    margin: 0 auto;
+    position: relative;
   }
 
-  #drop-area {
-    border: 2px dashed #666;
-    padding: 30px;
+  .shell::before,
+  .shell::after {
+    content: "";
+    position: absolute;
+    width: 220px;
+    height: 220px;
+    border-radius: 50%;
+    opacity: 0.24;
+    z-index: -1;
+    animation: floaty 8s ease-in-out infinite;
+  }
+
+  .shell::before {
+    background: #bce3e7;
+    top: -30px;
+    left: -50px;
+  }
+
+  .shell::after {
+    background: #ffdcb2;
+    bottom: -60px;
+    right: -40px;
+    animation-delay: 1.4s;
+  }
+
+  @keyframes floaty {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(12px); }
+  }
+
+  .hero {
+    background: linear-gradient(130deg, #0d4451 0%, #0b6875 52%, #2a8f8a 100%);
+    border-radius: 28px;
+    color: #f4fcff;
+    padding: 30px 28px;
+    box-shadow: var(--shadow);
+  }
+
+  .eyebrow {
+    margin: 0;
+    font-size: 0.82rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    opacity: 0.85;
+    font-weight: 600;
+  }
+
+  h1 {
+    margin: 10px 0 8px;
+    font-size: clamp(1.5rem, 2.7vw, 2.5rem);
+    line-height: 1.15;
+  }
+
+  .hero-sub {
+    margin: 0;
+    font-size: 1rem;
+    opacity: 0.9;
+    max-width: 620px;
+  }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 22px;
+    margin-top: 22px;
+  }
+
+  .card {
+    background: var(--paper);
+    border: 1px solid #e7eef5;
+    border-radius: var(--radius-lg);
+    padding: 22px;
+    box-shadow: 0 10px 20px rgba(25, 48, 74, 0.07);
+    animation: reveal 500ms ease both;
+  }
+
+  @keyframes reveal {
+    from {
+      opacity: 0;
+      transform: translateY(12px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .card h2 {
+    margin: 0 0 5px;
+    font-size: 1.2rem;
+    line-height: 1.25;
+    letter-spacing: 0.01em;
+  }
+
+  .card p {
+    margin: 0;
+    color: var(--muted);
+    line-height: 1.45;
+    font-size: 0.95rem;
+  }
+
+  .drop-area {
+    margin-top: 16px;
+    border: 2px dashed var(--line);
+    border-radius: var(--radius-md);
+    padding: 28px 14px;
     text-align: center;
-    margin-bottom: 20px;
     cursor: pointer;
-    background: #f9f9f9;
+    transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+    background: #fafdfd;
+  }
+
+  .drop-area:hover {
+    border-color: var(--brand);
+    transform: translateY(-2px);
+  }
+
+  .drop-area.active {
+    border-color: var(--brand);
+    background: var(--soft);
+  }
+
+  .drop-main {
+    font-weight: 600;
+    font-size: 1rem;
+  }
+
+  .drop-hint {
+    margin-top: 7px;
+    color: var(--muted);
+    font-size: 0.86rem;
   }
 
   #file-list {
     list-style: none;
     padding: 0;
+    margin: 16px 0 0;
+    max-height: 250px;
+    overflow: auto;
   }
 
   #file-list li {
-    padding: 8px;
-    border: 1px solid #ccc;
-    margin-bottom: 5px;
-    cursor: move;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid #dce6f0;
+    border-radius: 10px;
+    margin-bottom: 8px;
     background: #fff;
+    cursor: move;
   }
 
-  input, button {
-    padding: 10px;
-    margin-top: 10px;
+  .file-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 82%;
+  }
+
+  .file-index {
+    color: var(--muted);
+    font-size: 0.82rem;
+    font-weight: 600;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 16px;
   }
 
   button {
+    border: 0;
+    border-radius: 12px;
+    padding: 11px 15px;
+    font: inherit;
+    font-weight: 600;
     cursor: pointer;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
   }
 
-  .section {
-    margin-top: 40px;
-    padding-top: 20px;
-    border-top: 2px solid #ddd;
+  button:hover {
+    transform: translateY(-1px);
+  }
+
+  button:active {
+    transform: translateY(0);
+  }
+
+  .btn-primary {
+    background: var(--brand);
+    color: white;
+    box-shadow: 0 7px 16px rgba(10, 127, 138, 0.28);
+  }
+
+  .btn-primary:hover {
+    background: var(--brand-strong);
+  }
+
+  .btn-soft {
+    background: #edf3f8;
+    color: #2e465e;
+  }
+
+  .btn-soft:hover {
+    background: #e2ebf3;
+  }
+
+  .input-wrap {
+    margin-top: 16px;
+  }
+
+  .input-wrap label {
+    display: block;
+    margin-bottom: 7px;
+    color: #324a61;
+    font-size: 0.9rem;
+    font-weight: 500;
+  }
+
+  input[type="text"] {
+    width: 100%;
+    border: 1px solid #ced9e5;
+    border-radius: 12px;
+    padding: 11px 12px;
+    font: inherit;
+    outline: none;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  input[type="text"]:focus {
+    border-color: var(--brand);
+    box-shadow: 0 0 0 4px rgba(10, 127, 138, 0.14);
+  }
+
+  #status {
+    margin-top: 14px;
+    min-height: 24px;
+    font-weight: 500;
+  }
+
+  #status.success { color: var(--success); }
+  #status.error { color: var(--error); }
+  #status.busy { color: #2f6286; }
+
+  .foot {
+    margin-top: 22px;
+    text-align: center;
+    color: #6d7b88;
+    font-size: 0.85rem;
+  }
+
+  @media (max-width: 840px) {
+    .grid {
+      grid-template-columns: 1fr;
+    }
+
+    .hero {
+      padding: 24px 20px;
+      border-radius: 22px;
+    }
+
+    .card {
+      padding: 18px;
+    }
   }
 </style>
 </head>
 
 <body>
+<main class="shell">
+  <section class="hero">
+    <p class="eyebrow">Automation Workspace</p>
+    <h1>Merge files and generate reports in one place</h1>
+    <p class="hero-sub">A cleaner workflow for document operations. Drop your files, reorder instantly, and trigger demographic PDF creation without switching tools.</p>
+  </section>
 
-<h2>🚀 Automation Tools</h2>
+  <section class="grid">
+    <!-- ================= PDF MERGER ================= -->
+    <div class="card">
+      <h2>PDF & Image Merger</h2>
+      <p>Drop files, arrange order by dragging, then merge into a single PDF.</p>
 
-<!-- ================= PDF MERGER ================= -->
-<div class="section">
-<h3>📄 PDF & Image Merger</h3>
+      <div id="drop-area" class="drop-area">
+        <div class="drop-main">Drag and drop files here</div>
+        <div class="drop-hint">or click to browse from your device</div>
+        <input type="file" id="file-input" multiple style="display:none;">
+      </div>
 
-<div id="drop-area">
-  Drag & Drop files here or click to select
-  <input type="file" id="file-input" multiple style="display:none;">
-</div>
+      <ul id="file-list"></ul>
 
-<ul id="file-list"></ul>
+      <div class="actions">
+        <button id="merge-btn" class="btn-primary">Merge Files</button>
+        <button id="clear-btn" class="btn-soft" type="button">Clear</button>
+      </div>
+    </div>
 
-<button id="merge-btn">Merge Files</button>
-</div>
+    <!-- ================= PLAYWRIGHT AUTOMATION ================= -->
+    <div class="card">
+      <h2>Generate Demographic PDF</h2>
+      <p>Enter the target system ID and download a fresh demographic report.</p>
 
-<!-- ================= PLAYWRIGHT AUTOMATION ================= -->
-<div class="section">
-<h3>⚡ Generate Demographic PDF</h3>
+      <div class="input-wrap">
+        <label for="systemId">System ID</label>
+        <input type="text" id="systemId" placeholder="e.g. SYS-10239" autocomplete="off">
+      </div>
 
-<input type="text" id="systemId" placeholder="Enter System ID">
-<br>
-<button onclick="generatePDF()">Generate PDF</button>
+      <div class="actions">
+        <button onclick="generatePDF()" class="btn-primary">Generate PDF</button>
+      </div>
 
-<p id="status"></p>
-</div>
+      <p id="status"></p>
+    </div>
+  </section>
 
+  <p class="foot">Tip: drag files in the list to reorder before merging.</p>
+</main>
 <script>
 // ================= PDF MERGER =================
 const dropArea = document.getElementById('drop-area');
 const fileInput = document.getElementById('file-input');
 const fileList = document.getElementById('file-list');
+const clearBtn = document.getElementById('clear-btn');
 let files = [];
 
 dropArea.addEventListener('click', () => fileInput.click());
 
 fileInput.addEventListener('change', e => addFiles(e.target.files));
 
-dropArea.addEventListener('dragover', e => e.preventDefault());
+dropArea.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropArea.classList.add('active');
+});
+
+dropArea.addEventListener('dragleave', () => {
+  dropArea.classList.remove('active');
+});
+
 dropArea.addEventListener('drop', e => {
   e.preventDefault();
+  dropArea.classList.remove('active');
   addFiles(e.dataTransfer.files);
 });
 
 function addFiles(selectedFiles) {
-  for (let f of selectedFiles) {
+  for (const f of selectedFiles) {
     files.push(f);
   }
   renderFiles();
@@ -112,7 +407,7 @@ function renderFiles() {
 
   files.forEach((file, index) => {
     const li = document.createElement('li');
-    li.textContent = file.name;
+    li.innerHTML = `<span class="file-label">${file.name}</span><span class="file-index">#${index + 1}</span>`;
     li.draggable = true;
 
     li.addEventListener('dragstart', e => {
@@ -150,10 +445,16 @@ document.getElementById('merge-btn').addEventListener('click', async () => {
   a.click();
 });
 
+clearBtn.addEventListener('click', () => {
+  files = [];
+  fileInput.value = '';
+  renderFiles();
+});
+
 
 // ================= PLAYWRIGHT AUTOMATION =================
 async function generatePDF() {
-  const systemId = document.getElementById('systemId').value;
+  const systemId = document.getElementById('systemId').value.trim();
   const status = document.getElementById('status');
 
   if (!systemId) {
@@ -161,6 +462,7 @@ async function generatePDF() {
     return;
   }
 
+  status.className = 'busy';
   status.innerText = 'Processing... please wait ⏳';
 
   try {
@@ -170,6 +472,10 @@ async function generatePDF() {
       body: JSON.stringify({ systemId })
     });
 
+    if (!res.ok) {
+      throw new Error(`Request failed: ${res.status}`);
+    }
+
     const blob = await res.blob();
     const url = window.URL.createObjectURL(blob);
 
@@ -178,9 +484,11 @@ async function generatePDF() {
     a.download = 'demographic.pdf';
     a.click();
 
+    status.className = 'success';
     status.innerText = '✅ PDF Generated!';
   } catch (err) {
     console.error(err);
+    status.className = 'error';
     status.innerText = '❌ Error generating PDF';
   }
 }
