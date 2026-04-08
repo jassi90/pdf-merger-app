@@ -7,14 +7,6 @@ const fs = require('fs');
 const path = require('path');
 const { runIllinoisAbpAutomation } = require('./part2-automation');
 
-let runPart1DataEntry = null;
-let DEFAULT_SYSTEM_IDS = [];
-try {
-    ({ runPart1DataEntry, DEFAULT_SYSTEM_IDS } = require('./part1-automation'));
-} catch (err) {
-    console.warn('Part1 automation module not loaded:', err.message);
-}
-
 const app = express();
 
 app.use(express.static(__dirname));
@@ -24,127 +16,123 @@ const upload = multer({ dest: 'uploads/' });
 
 /* ---------------- PDF MERGER ---------------- */
 app.post('/merge', upload.array('files'), async (req, res) => {
-    try {
-        const mergedPdf = await PDFDocument.create();
+  try {
+    const mergedPdf = await PDFDocument.create();
 
-        for (const file of req.files) {
-            const filePath = file.path;
-            const ext = path.extname(file.originalname).toLowerCase();
-            const bytes = fs.readFileSync(filePath);
+    for (const file of req.files) {
+      const filePath = file.path;
+      const ext = path.extname(file.originalname).toLowerCase();
+      const bytes = fs.readFileSync(filePath);
 
-            if (ext === '.pdf') {
-                const pdf = await PDFDocument.load(bytes);
-                const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-                pages.forEach(p => mergedPdf.addPage(p));
+      if (ext === '.pdf') {
+        const pdf = await PDFDocument.load(bytes);
+        const pages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
+        pages.forEach((p) => mergedPdf.addPage(p));
+      } else if (ext === '.jpg' || ext === '.jpeg') {
+        const image = await mergedPdf.embedJpg(bytes);
+        const page = mergedPdf.addPage([image.width, image.height]);
+        page.drawImage(image, {
+          x: 0,
+          y: 0,
+          width: image.width,
+          height: image.height
+        });
+      } else if (ext === '.png') {
+        const image = await mergedPdf.embedPng(bytes);
+        const page = mergedPdf.addPage([image.width, image.height]);
+        page.drawImage(image, {
+          x: 0,
+          y: 0,
+          width: image.width,
+          height: image.height
+        });
+      } else {
+        throw new Error(`Unsupported file: ${file.originalname}`);
+      }
 
-            } else if (ext === '.jpg' || ext === '.jpeg') {
-                const image = await mergedPdf.embedJpg(bytes);
-                const page = mergedPdf.addPage([image.width, image.height]);
-                page.drawImage(image, {
-                    x: 0, y: 0,
-                    width: image.width,
-                    height: image.height
-                });
-
-            } else if (ext === '.png') {
-                const image = await mergedPdf.embedPng(bytes);
-                const page = mergedPdf.addPage([image.width, image.height]);
-                page.drawImage(image, {
-                    x: 0, y: 0,
-                    width: image.width,
-                    height: image.height
-                });
-
-            } else {
-                throw new Error(`Unsupported file: ${file.originalname}`);
-            }
-
-            fs.unlinkSync(filePath);
-        }
-
-        const mergedBytes = await mergedPdf.save();
-
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', 'attachment; filename=merged.pdf');
-        res.send(Buffer.from(mergedBytes));
-
-    } catch (err) {
-        console.error("MERGE ERROR:", err);
-        res.status(500).send(err.message || 'Error merging files');
+      fs.unlinkSync(filePath);
     }
+
+    const mergedBytes = await mergedPdf.save();
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=merged.pdf');
+    res.send(Buffer.from(mergedBytes));
+  } catch (err) {
+    console.error('MERGE ERROR:', err);
+    res.status(500).send(err.message || 'Error merging files');
+  }
 });
 
 /* ---------------- PLAYWRIGHT VIA NGROK ---------------- */
 app.post('/generate-pdf', async (req, res) => {
-    try {
-        const { systemId } = req.body;
+  try {
+    const { systemId } = req.body;
 
-        if (!systemId) {
-            return res.status(400).send('systemId is required');
-        }
-
-        console.log("Forwarding to local automation:", systemId);
-
-        const response = await fetch('https://expertly-uncritical-annmarie.ngrok-free.dev/run-local-automation', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ systemId })
-        });
-
-        if (!response.ok) {
-            const text = await response.text();
-            throw new Error(text || 'Local automation failed');
-        }
-
-        const arrayBuffer = await response.arrayBuffer();
-
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', 'attachment; filename=generated.pdf');
-        res.send(Buffer.from(arrayBuffer));
-
-    } catch (err) {
-        console.error("REMOTE ERROR:", err);
-        res.status(500).send(err.message || 'Failed to connect to local automation');
+    if (!systemId) {
+      return res.status(400).send('systemId is required');
     }
+
+    console.log('Forwarding to local automation:', systemId);
+
+    const response = await fetch(
+      'https://expertly-uncritical-annmarie.ngrok-free.dev/run-local-automation',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ systemId })
+      }
+    );
+
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(text || 'Local automation failed');
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', 'attachment; filename=generated.pdf');
+    res.send(Buffer.from(arrayBuffer));
+  } catch (err) {
+    console.error('REMOTE ERROR:', err);
+    res.status(500).send(err.message || 'Failed to connect to local automation');
+  }
+});
+
+/* ---------------- PART2 DATA ENTRY ---------------- */
+app.post('/run-part2-data-entry', async (req, res) => {
+  try {
+    const { systemId, headless } = req.body || {};
+    const parsedSystemId = Number(systemId);
+
+    if (!Number.isFinite(parsedSystemId)) {
+      return res.status(400).json({ error: 'systemId is required for Part2' });
+    }
+
+    const result = await runIllinoisAbpAutomation(parsedSystemId, {
+      headless: Boolean(headless),
+      installerInfoPath: process.env.INSTALLER_INFO_PATH,
+      downloadFolder: process.env.DOWNLOAD_FOLDER,
+      pythonScriptPath: process.env.PYTHON_SCRIPT_PATH
+    });
+
+    res.json({
+      systemId: parsedSystemId,
+      success: result.status === 'success',
+      result
+    });
+  } catch (err) {
+    console.error('PART2 ERROR:', err);
+    res.status(500).json({
+      error: err.message || 'Failed to run Part2 data entry automation'
+    });
+  }
 });
 
 /* ---------------- START SERVER ---------------- */
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
-
-
-/* ---------------- PART2 DATA ENTRY ---------------- */
-app.post('/run-part2-data-entry', async (req, res) => {
-    try {
-        const { systemIds, headless } = req.body || {};
-        const parsedSystemIds = Array.isArray(systemIds)
-            ? systemIds.map((v) => Number(v)).filter((v) => Number.isFinite(v))
-            : [];
-
-        if (parsedSystemIds.length === 0) {
-            return res.status(400).json({ error: 'systemIds is required for Part2' });
-        }
-
-        const result = await runIllinoisAbpAutomation(parsedSystemIds, {
-            headless: Boolean(headless),
-            installerInfoPath: process.env.INSTALLER_INFO_PATH,
-            downloadFolder: process.env.DOWNLOAD_FOLDER,
-            pythonScriptPath: process.env.PYTHON_SCRIPT_PATH
-        });
-
-        res.json({
-            total: parsedSystemIds.length,
-            completed: result.filter((r) => r.status === 'success').length,
-            failed: result.filter((r) => r.status === 'failed').length,
-            results: result
-        });
-    } catch (err) {
-        console.error('PART2 ERROR:', err);
-        res.status(500).json({
-            error: err.message || 'Failed to run Part2 data entry automation'
-        });
-    }
+  console.log(`Server running on port ${PORT}`);
 });

@@ -3,9 +3,7 @@ const ExcelJs = require('exceljs');
 const { PDFDocument } = require('pdf-lib');
 const pdfParse = require('pdf-parse');
 const fs = require('fs/promises');
-const fsSync = require('fs');
 const path = require('path');
-const os = require('os');
 const { spawn } = require('child_process');
 
 function formatDate(dateString) {
@@ -18,24 +16,9 @@ function formatDate(dateString) {
 }
 
 async function loginIllinois(page) {
-  const abpUser =
-    process.env.ABP_USERNAME ||
-    process.env.ABP_EMAIL ||
-    process.env.ABP_USER ||
-    process.env.SREC_USERNAME;
-  const abpPassword =
-    process.env.ABP_PASSWORD ||
-    process.env.ABP_PASS ||
-    process.env.ABP_PW ||
-    process.env.SREC_PASSWORD;
-
-  if (!abpUser || !abpPassword) {
-    throw new Error('Missing ABP credentials for Part2. Set ABP_USERNAME/ABP_EMAIL and ABP_PASSWORD/ABP_PASS.');
-  }
-
   await page.goto('https://portal.illinoisabp.com/');
-  await page.getByLabel('Username').fill(abpUser);
-  await page.getByLabel('Password').fill(abpPassword);
+  await page.getByLabel('Username').fill(process.env.ILLINOIS_USERNAME);
+  await page.getByLabel('Password').fill(process.env.ILLINOIS_PASSWORD);
   await page.getByRole('button', { name: 'Sign in' }).first().click();
   await page.waitForTimeout(2000);
 }
@@ -49,9 +32,6 @@ async function loginCSG(page) {
 }
 
 async function loadInstallerInfo(installerInfoPath) {
-  if (!installerInfoPath || !fsSync.existsSync(installerInfoPath)) {
-    throw new Error(`Installer info file not found: ${installerInfoPath}`);
-  }
   const workbook = new ExcelJs.Workbook();
   await workbook.xlsx.readFile(installerInfoPath);
   return workbook.getWorksheet('Sheet1');
@@ -101,7 +81,7 @@ async function getChecklistData(page, systemId, worksheet) {
 
   await page.goto(`https://portal2.carbonsolutionsgroup.com/admin/solar_panel_system/${systemId}/checklist?onlyIncompleTasks=false&onlyMyTasks=false&showAll=false`);
 
-  let ABPID = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(3) > td:nth-child(2)').innerText();
+  const ABPID = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(3) > td:nth-child(2)').innerText();
   const AC = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(4) > td:nth-child(2)').innerText();
   const systemName = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(8) > td:nth-child(2)').innerText();
   const Utility = await page.locator('#tracking-system-info > fieldset > table > tbody > tr:nth-child(11) > td:nth-child(2)').innerText();
@@ -113,7 +93,9 @@ async function getChecklistData(page, systemId, worksheet) {
   const completationDate = await page.getByRole('row', { name: 'Construction Completion Date' }).getByRole('cell').nth(1).innerText();
 
   let NON = await page.getByRole('row', { name: 'PJM Gats or MRETs Unit ID' }).getByRole('cell').nth(1).innerText();
-  if (!NON || NON === 'MISSING!') NON = 'NON123456';
+  if (!NON || NON === 'MISSING!') {
+    NON = 'NON123456';
+  }
 
   const I9 = await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(10) > td:nth-child(2)').innerText();
   const I10 = await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(12) > td:nth-child(2)').innerText();
@@ -143,11 +125,12 @@ async function getChecklistData(page, systemId, worksheet) {
     D11: await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(28) > td:nth-child(2)').innerText()
   };
 
-  const laborTable = '#part2-section3 > fieldset > table > tbody > tr:nth-child(31) > td:nth-child(2) > table';
-  const laborRows = await page.$$(laborTable + ' tr');
+  const tableSelector = '#part2-section3 > fieldset > table > tbody > tr:nth-child(31) > td:nth-child(2) > table';
+  const rows = await page.$$(tableSelector + ' tr');
   const laborData = [];
-  for (let i = 0; i < laborRows.length; i++) {
-    const cells = await laborRows[i].$$('td');
+
+  for (let i = 0; i < rows.length; i++) {
+    const cells = await rows[i].$$('td');
     if (cells.length >= 2) {
       laborData.push({
         zip: (await cells[0].innerText()).trim(),
@@ -173,7 +156,7 @@ async function getChecklistData(page, systemId, worksheet) {
 
   const inverterModels = inverterData
     .slice(1)
-    .map(x => `${x.model} = ${x.size} x ${x.quantity}`)
+    .map((x) => `${x.model} = ${x.size} x ${x.quantity}`)
     .join(', ');
 
   const J1 = await page.locator('#part2-section3 > fieldset > table > tbody > tr:nth-child(33) > td:nth-child(2)').innerText();
@@ -298,6 +281,7 @@ async function fillIllinoisForms(page, data) {
   await page.getByPlaceholder('mm-dd-yyyy').fill(data.I11);
 
   const d = data.demographics;
+
   if (d.D1 !== '0') await page.getByLabel('White').fill(d.D1);
   if (d.D2 !== '0') await page.getByLabel('Black or African American').fill(d.D2);
   if (d.D3 !== '0') await page.getByLabel('American Indian or Alaskan').fill(d.D3);
@@ -316,18 +300,22 @@ async function fillIllinoisForms(page, data) {
     await page.getByLabel('Hispanic or Latino', { exact: true }).press('Control+A');
     await page.getByLabel('Hispanic or Latino', { exact: true }).press('Backspace');
   }
+
   if (d.D10 === '0') {
     await page.getByLabel('Not Hispanic or Latino').click();
     await page.getByLabel('Not Hispanic or Latino').press('Control+A');
     await page.getByLabel('Not Hispanic or Latino').press('Backspace');
   }
+
   if (d.D11 === '0') {
     await page.getByLabel('Employee Declines to Identify Ethnicity').click();
     await page.getByLabel('Employee Declines to Identify Ethnicity').press('Control+A');
     await page.getByLabel('Employee Declines to Identify Ethnicity').press('Backspace');
   }
 
-  const demographicsConcat = d.D1 + d.D2 + d.D3 + d.D4 + d.D5 + d.D6 + d.D7 + d.D8 + d.D9 + d.D10 + d.D11;
+  const demographicsConcat =
+    d.D1 + d.D2 + d.D3 + d.D4 + d.D5 + d.D6 + d.D7 + d.D8 + d.D9 + d.D10 + d.D11;
+
   if (demographicsConcat === '00000000000') {
     await page.getByLabel('Employee Declines to Identify', { exact: true }).fill('1');
     await page.getByLabel('Employee Declines to Identify Ethnicity').fill('1');
@@ -335,6 +323,7 @@ async function fillIllinoisForms(page, data) {
 
   if (data.laborData.length > 1 && Number(data.laborData[1].zip) > 0) {
     await page.getByLabel('Yes').nth(2).check();
+
     for (let i = 1; i < data.laborData.length; i++) {
       await page.getByRole('button', { name: 'Add Zip Code' }).click();
       await page.getByLabel('Zip', { exact: true }).fill(data.laborData[i].zip);
@@ -346,7 +335,12 @@ async function fillIllinoisForms(page, data) {
   await page.getByLabel('Solar Training Pipeline').fill(data.J1);
   await page.getByLabel('Craft Apprenticeship Program').fill(data.J2);
   await page.getByLabel('Multi-Cultural Job Training').fill(data.J3);
-  await page.locator('div').filter({ hasText: /^Total number of graduates of Job Training programs who worked on the project$/ }).getByRole('textbox').fill(data.J4);
+  await page
+    .locator('div')
+    .filter({ hasText: /^Total number of graduates of Job Training programs who worked on the project$/ })
+    .getByRole('textbox')
+    .fill(data.J4);
+
   await page.getByRole('button', { name: 'Save and Continue' }).click();
 
   await revisitIfNeeded(page);
@@ -357,23 +351,48 @@ async function fillIllinoisForms(page, data) {
   await page.getByLabel('Inverter Model*').fill(data.inverterModels);
 
   if (data.E3.includes('Enphase')) {
-    await page.locator('div').filter({ hasText: /^ANSI C\.12\+\/- 5%$/ }).getByRole('combobox').selectOption(data.AC > 10 ? 'ANSI' : '____5_');
+    await page
+      .locator('div')
+      .filter({ hasText: /^ANSI C\.12\+\/- 5%$/ })
+      .getByRole('combobox')
+      .selectOption(data.AC > 10 ? 'ANSI' : '____5_');
+
     await page.getByLabel('Meter Manufacturer / Make*').fill(data.E3);
     await page.getByLabel('Meter Model*').fill('Envoy');
   } else if (data.AC > 10) {
-    await page.locator('div').filter({ hasText: /^ANSI C\.12\+\/- 5%$/ }).getByRole('combobox').selectOption('ANSI');
+    await page
+      .locator('div')
+      .filter({ hasText: /^ANSI C\.12\+\/- 5%$/ })
+      .getByRole('combobox')
+      .selectOption('ANSI');
+
     await page.getByLabel('Meter Manufacturer / Make*').fill(data.E5);
     await page.getByLabel('Meter Model*').fill(data.E6);
   } else if (data.E3 === 'APSystems') {
-    await page.locator('div').filter({ hasText: /^ANSI C\.12\+\/- 5%$/ }).getByRole('combobox').selectOption('____5_');
+    await page
+      .locator('div')
+      .filter({ hasText: /^ANSI C\.12\+\/- 5%$/ })
+      .getByRole('combobox')
+      .selectOption('____5_');
+
     await page.getByLabel('Meter Manufacturer / Make*').fill(data.E3);
     await page.getByLabel('Meter Model*').fill('ECU');
   } else if (data.E3 === 'Hoymiles') {
-    await page.locator('div').filter({ hasText: /^ANSI C\.12\+\/- 5%$/ }).getByRole('combobox').selectOption('____5_');
+    await page
+      .locator('div')
+      .filter({ hasText: /^ANSI C\.12\+\/- 5%$/ })
+      .getByRole('combobox')
+      .selectOption('____5_');
+
     await page.getByLabel('Meter Manufacturer / Make*').fill(data.E3);
     await page.getByLabel('Meter Model*').fill('DTU');
   } else {
-    await page.locator('div').filter({ hasText: /^ANSI C\.12\+\/- 5%$/ }).getByRole('combobox').selectOption('____5_');
+    await page
+      .locator('div')
+      .filter({ hasText: /^ANSI C\.12\+\/- 5%$/ })
+      .getByRole('combobox')
+      .selectOption('____5_');
+
     await page.getByLabel('Meter Manufacturer / Make*').fill(data.E3);
     await page.getByLabel('Meter Model*').fill(data.inverterModels);
   }
@@ -386,7 +405,9 @@ async function fillIllinoisForms(page, data) {
 
 async function runPythonExtraction(pythonScriptPath, filteredFilePath, systemId) {
   return new Promise((resolve, reject) => {
-    const pythonProcess = spawn('python', [pythonScriptPath, filteredFilePath, String(systemId)], { shell: true });
+    const pythonProcess = spawn('python', [pythonScriptPath, filteredFilePath, String(systemId)], {
+      shell: true
+    });
 
     pythonProcess.on('exit', (code) => {
       if (code === 0) resolve();
@@ -438,7 +459,7 @@ async function processAndUploadScheduleA(page, systemId, systemName, options) {
       const pdfBytes = await fs.readFile(file);
       const pdf = await PDFDocument.load(pdfBytes);
       const copiedPages = await mergedPdf.copyPages(pdf, pdf.getPageIndices());
-      copiedPages.forEach(p => mergedPdf.addPage(p));
+      copiedPages.forEach((p) => mergedPdf.addPage(p));
       await fs.unlink(file);
     } catch (err) {
       console.warn(`Failed processing ${file}: ${err.message}`);
@@ -460,7 +481,7 @@ async function processAndUploadScheduleA(page, systemId, systemName, options) {
     const pageBytes = await singlePagePdf.save();
     const pageData = await pdfParse(pageBytes);
 
-    if (textToCheck.some(text => pageData.text.includes(text))) {
+    if (textToCheck.some((text) => pageData.text.includes(text))) {
       const [copiedPage] = await filteredPdf.copyPages(originalPdf, [i]);
       filteredPdf.addPage(copiedPage);
     }
@@ -470,18 +491,11 @@ async function processAndUploadScheduleA(page, systemId, systemName, options) {
   const filteredFilePath = path.resolve(downloadFolder, `${systemId}SchA_api.pdf`);
   await fs.writeFile(filteredFilePath, filteredPdfBytes);
 
-  let extractedText = '';
-  if (pythonScriptPath && fsSync.existsSync(pythonScriptPath)) {
-    await runPythonExtraction(pythonScriptPath, filteredFilePath, systemId);
-    const extractedTextFile = path.resolve(downloadFolder, `${systemId}extracted_text.txt`);
-    extractedText = await fs.readFile(extractedTextFile, 'utf-8');
-  } else {
-    const parsed = await pdfParse(filteredPdfBytes);
-    extractedText = parsed.text || '';
-  }
+  await runPythonExtraction(pythonScriptPath, filteredFilePath, systemId);
 
+  const extractedTextFile = path.resolve(downloadFolder, `${systemId}extracted_text.txt`);
+  const extractedText = await fs.readFile(extractedTextFile, 'utf-8');
   const pdfText = extractedText.toLowerCase().replace(/\s+/g, '');
-
   const matchesSystem = pdfText.includes(systemName.toLowerCase().replace(/\s+/g, ''));
 
   if (matchesSystem) {
@@ -517,13 +531,29 @@ async function processSystem(page, systemId, worksheet, options) {
   };
 }
 
-async function runIllinoisAbpAutomation(systemIds, options = {}) {
+async function runIllinoisAbpAutomation(systemId, options = {}) {
   const {
     headless = false,
-    installerInfoPath = process.env.INSTALLER_INFO_PATH || path.resolve(__dirname, 'InstallerInfo.xlsx'),
-    downloadFolder = process.env.DOWNLOAD_FOLDER || os.tmpdir(),
-    pythonScriptPath = process.env.PYTHON_SCRIPT_PATH || ''
+    installerInfoPath = process.env.INSTALLER_INFO_PATH,
+    downloadFolder = process.env.DOWNLOAD_FOLDER,
+    pythonScriptPath = process.env.PYTHON_SCRIPT_PATH
   } = options;
+
+  if (!Number.isFinite(Number(systemId))) {
+    throw new Error('A valid systemId is required');
+  }
+
+  if (!installerInfoPath) {
+    throw new Error('INSTALLER_INFO_PATH is missing');
+  }
+
+  if (!downloadFolder) {
+    throw new Error('DOWNLOAD_FOLDER is missing');
+  }
+
+  if (!pythonScriptPath) {
+    throw new Error('PYTHON_SCRIPT_PATH is missing');
+  }
 
   const browser = await chromium.launch({
     headless,
@@ -538,27 +568,13 @@ async function runIllinoisAbpAutomation(systemIds, options = {}) {
     await loginIllinois(page);
     await loginCSG(page);
 
-    const results = [];
-    for (const systemId of systemIds) {
-      try {
-        const result = await processSystem(page, systemId, worksheet, {
-          downloadFolder,
-          pythonScriptPath
-        });
-        results.push(result);
-        console.log(`✅ Finished ${systemId}`);
-      } catch (error) {
-        console.error(`❌ Failed ${systemId}: ${error.message}`);
-        results.push({
-          systemId,
-          status: 'failed',
-          error: error.message
-        });
-      }
-    }
+    const result = await processSystem(page, Number(systemId), worksheet, {
+      downloadFolder,
+      pythonScriptPath
+    });
 
     await browser.close();
-    return results;
+    return result;
   } catch (err) {
     await browser.close();
     throw err;
