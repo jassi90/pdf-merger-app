@@ -417,7 +417,7 @@ async function runAutomation(systemId) {
             await page.waitForTimeout(5000);
 
             const totalFiles = await page.locator('.grid.grid-cols-3.gap-4.items-start.mb-1').nth(0).locator('.flex-auto svg').count();
-            const totalShA = await page.locator('.grid.grid-cols-3.gap-4.items-start.mb-1').nth(1).locator('.flex-auto svg').count();
+            const totalShA = await page.locator('.grid.grid-cols-3.gap-4.items-start.mb-1').nth(4).locator('.flex-auto svg').count();
 
             const downloadedFiles = [];
 
