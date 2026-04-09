@@ -33,7 +33,7 @@ async function runAutomation(systemId) {
         await page.getByLabel('Password').fill(process.env.ABP_PW);
         await page.getByRole('button', { name: 'Sign in' }).first().click();
 
-        await page.waitForTimeout(2000);
+        await page.waitForTimeout(5000);
         await page.goto('https://portal2.carbonsolutionsgroup.com/admin/login');
         await page.fill('input[type="email"]', process.env.EMAIL);
         await page.fill('input[type="password"]', process.env.PASSWORD);
