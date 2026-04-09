@@ -122,6 +122,13 @@
     padding: 22px;
     box-shadow: 0 10px 20px rgba(25, 48, 74, 0.07);
     animation: reveal 500ms ease both;
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+  }
+
+  .card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 18px 30px rgba(25, 48, 74, 0.14);
+    border-color: #c6d9ea;
   }
 
   @keyframes reveal {
@@ -162,7 +169,8 @@
 
   .drop-area:hover {
     border-color: var(--brand);
-    transform: translateY(-2px);
+    transform: translateY(-3px) scale(1.01);
+    box-shadow: 0 10px 20px rgba(10, 127, 138, 0.13);
   }
 
   .drop-area.active {
@@ -200,6 +208,14 @@
     margin-bottom: 8px;
     background: #fff;
     cursor: move;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+  }
+
+  #file-list li:hover {
+    transform: translateX(3px);
+    border-color: #b8cfdf;
+    box-shadow: 0 8px 14px rgba(23, 48, 74, 0.12);
+    background: #fbfdff;
   }
 
   .file-label {
@@ -229,11 +245,12 @@
     font: inherit;
     font-weight: 600;
     cursor: pointer;
-    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
+    transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease, filter 0.18s ease;
   }
 
   button:hover {
-    transform: translateY(-1px);
+    transform: translateY(-2px) scale(1.01);
+    filter: saturate(1.08);
   }
 
   button:active {
@@ -248,6 +265,7 @@
 
   .btn-primary:hover {
     background: var(--brand-strong);
+    box-shadow: 0 12px 20px rgba(10, 127, 138, 0.34);
   }
 
   .btn-soft {
@@ -257,6 +275,16 @@
 
   .btn-soft:hover {
     background: #e2ebf3;
+    box-shadow: 0 8px 16px rgba(55, 84, 115, 0.15);
+  }
+
+  .hero {
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+  }
+
+  .hero:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 18px 38px rgba(17, 36, 56, 0.2);
   }
 
   .input-wrap {
