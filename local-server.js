@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const express = require('express');
 const { runAutomation: runDemographicAutomation } = require('./automation');
+const { runAutomation: runPart1Automation } = require('./part1-automation');
 const { runAutomation: runPart2Automation } = require('./part2-automation');
 
 const app = express();
@@ -41,6 +42,25 @@ app.post('/run-local-part2', async (req, res) => {
     console.error('LOCAL PART2 ERROR:', err);
     res.status(500).json({
       error: err.message || 'Local Part2 automation failed'
+    });
+  }
+});
+
+app.post('/run-local-part1', async (req, res) => {
+  try {
+    const { systemId } = req.body || {};
+    const parsedSystemId = Number(systemId);
+
+    if (!Number.isFinite(parsedSystemId)) {
+      return res.status(400).json({ error: 'systemId is required for Part1' });
+    }
+
+    const result = await runPart1Automation(parsedSystemId);
+    res.json(result);
+  } catch (err) {
+    console.error('LOCAL PART1 ERROR:', err);
+    res.status(500).json({
+      error: err.message || 'Local Part1 automation failed'
     });
   }
 });

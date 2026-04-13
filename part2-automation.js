@@ -170,8 +170,7 @@ async function runAutomation(systemId) {
 
         const E1 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(2) > td:nth-child(2)').innerText();
         const E2 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(3) > td:nth-child(2)').innerText();
-        const E3 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(5) > td:nth-child(2)').first().innerText();
-        const E5 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(7) > td:nth-child(2)').innerText();
+        const E3 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(5) > td:nth-child(2) > table > tbody > tr.bg-white > td:nth-child(1)').first().innerText();        const E5 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(7) > td:nth-child(2)').innerText();
         const E6 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(8) > td:nth-child(2)').innerText();
         const E7 = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(10) > td:nth-child(2)').innerText();
         const Amount = await page.locator('#part2-section4 > fieldset > table > tbody > tr:nth-child(11) > td:nth-child(2)').innerText();

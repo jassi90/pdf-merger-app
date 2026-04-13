@@ -351,6 +351,16 @@
   #part2-status.error { color: var(--error); }
   #part2-status.busy { color: #2f6286; }
 
+  #part1-status {
+    margin-top: 14px;
+    min-height: 24px;
+    font-weight: 500;
+  }
+
+  #part1-status.success { color: var(--success); }
+  #part1-status.error { color: var(--error); }
+  #part1-status.busy { color: #2f6286; }
+
   .result-box {
     margin-top: 10px;
     border: 1px solid #dce6f0;
@@ -431,6 +441,23 @@
       </div>
 
       <p id="status"></p>
+    </div>
+
+    <div class="card">
+      <h2>Part1</h2>
+      <p>Run the Illinois ABP Part1 workflow for a single System ID.</p>
+
+      <div class="input-wrap">
+        <label for="part1-id">System ID</label>
+        <input type="text" id="part1-id" placeholder="e.g. 171220" autocomplete="off">
+      </div>
+
+      <div class="actions">
+        <button id="part1-btn" class="btn-primary" type="button">Run Part1 Automation</button>
+      </div>
+
+      <p id="part1-status"></p>
+      <pre id="part1-result" class="result-box"></pre>
     </div>
 
     <div class="card">
@@ -587,6 +614,66 @@ async function generatePDF() {
 }
 
 const part2Btn = document.getElementById('part2-btn');
+const part1Btn = document.getElementById('part1-btn');
+
+if (part1Btn) {
+  part1Btn.addEventListener('click', async () => {
+    const raw = document.getElementById('part1-id').value.trim();
+    const systemId = Number(raw);
+    const status = document.getElementById('part1-status');
+    const resultBox = document.getElementById('part1-result');
+
+    if (!Number.isFinite(systemId)) {
+      status.className = 'error';
+      status.innerText = 'Enter a valid single System ID for Part1.';
+      resultBox.style.display = 'none';
+      return;
+    }
+
+    status.className = 'busy';
+    status.innerText = 'Running Part1 automation. This can take several minutes...';
+    resultBox.style.display = 'none';
+    resultBox.textContent = '';
+
+    try {
+      const res = await fetch('/run-part1-data-entry', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemId,
+          headless: false
+        })
+      });
+
+      const rawText = await res.text();
+      let payload;
+
+      try {
+        payload = JSON.parse(rawText);
+      } catch {
+        throw new Error(`Server returned non-JSON response: ${rawText.slice(0, 200)}`);
+      }
+
+      if (!res.ok) {
+        throw new Error(payload.error || `Request failed: ${res.status}`);
+      }
+
+      status.className = payload.success ? 'success' : 'error';
+      status.innerText = payload.success
+        ? `Part1 completed for System ID ${payload.systemId}.`
+        : `Part1 failed for System ID ${payload.systemId}.`;
+
+      resultBox.textContent = JSON.stringify(payload.result, null, 2);
+      resultBox.style.display = 'block';
+    } catch (err) {
+      console.error(err);
+      status.className = 'error';
+      status.innerText = `Part1 automation failed: ${err.message}`;
+      resultBox.textContent = err.stack || String(err);
+      resultBox.style.display = 'block';
+    }
+  });
+}
 
 if (part2Btn) {
   part2Btn.addEventListener('click', async () => {

@@ -5,9 +5,9 @@ const multer = require('multer');
 const { PDFDocument } = require('pdf-lib');
 const fs = require('fs');
 const path = require('path');
-const { runAutomation } = require('./part2-automation');
 
 const app = express();
+const NGROK_BASE_URL = process.env.NGROK_BASE_URL || 'https://expertly-uncritical-annmarie.ngrok-free.dev';
 
 app.use(express.static(__dirname));
 app.use(express.json());
@@ -76,7 +76,7 @@ app.post('/generate-pdf', async (req, res) => {
     console.log('Forwarding to local automation:', systemId);
 
     const response = await fetch(
-      'https://expertly-uncritical-annmarie.ngrok-free.dev/run-local-automation',
+      `${NGROK_BASE_URL}/run-local-automation`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -100,6 +100,54 @@ app.post('/generate-pdf', async (req, res) => {
   }
 });
 
+/* ---------------- PART1 DATA ENTRY ---------------- */
+app.post('/run-part1-data-entry', async (req, res) => {
+  try {
+    const { systemId } = req.body || {};
+    const parsedSystemId = Number(systemId);
+
+    if (!Number.isFinite(parsedSystemId)) {
+      return res.status(400).json({ error: 'systemId is required for Part1' });
+    }
+
+    const response = await fetch(
+      `${NGROK_BASE_URL}/run-local-part1`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true'
+        },
+        body: JSON.stringify({ systemId: parsedSystemId })
+      }
+    );
+
+    const text = await response.text();
+    let payload;
+
+    try {
+      payload = JSON.parse(text);
+    } catch {
+      throw new Error(`Part1 local server did not return JSON. Response was: ${text.slice(0, 200)}`);
+    }
+
+    if (!response.ok) {
+      throw new Error(payload.error || 'Local Part1 automation failed');
+    }
+
+    res.json({
+      systemId: parsedSystemId,
+      success: payload.success === true,
+      result: payload
+    });
+  } catch (err) {
+    console.error('PART1 ERROR:', err);
+    res.status(500).json({
+      error: err.message || 'Failed to run Part1 data entry automation'
+    });
+  }
+});
+
 /* ---------------- PART2 DATA ENTRY ---------------- */
 app.post('/run-part2-data-entry', async (req, res) => {
   try {
@@ -111,7 +159,7 @@ app.post('/run-part2-data-entry', async (req, res) => {
     }
 
     const response = await fetch(
-      'https://expertly-uncritical-annmarie.ngrok-free.dev/run-local-part2',
+      `${NGROK_BASE_URL}/run-local-part2`,
       {
         method: 'POST',
         headers: {
