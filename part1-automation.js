@@ -10,6 +10,10 @@ async function runAutomation(systemId) {
     });
 
     const page = await browser.newPage();
+    let uploadResult = {
+        uploaded: false,
+        reason: 'Part1 automation did not complete'
+    };
 
     try {
 
@@ -208,7 +212,10 @@ async function runAutomation(systemId) {
             const textExists = await textLocator.count() > 0;
 
             if (textExists) {
-                console.log(arr[i], textToCheck);
+                uploadResult = {
+                    uploaded: false,
+                    reason: `Application ${applicationID} is already submitted`
+                };
             } else {
                 await page.locator('#mxui_widget_VerticalScrollContainer_0 > div.mx-scrollcontainer-middle.region-content > div > div.mx-placeholder > div > div > div > div.mx-dataview.mx-name-dataView2.form-horizontal > div > div > div > div.mx-name-dataGrid22.widget-datagrid.widget-datagrid-selectable-rows.widget-datagrid-selection-method-click > div.widget-datagrid-content.sticky-table-container > div.widget-datagrid-grid.table > div > div:nth-child(2) > div:nth-child(6) > div > div > div > div.col-lg.col-md.col > div > button').click();
 
@@ -406,19 +413,28 @@ async function runAutomation(systemId) {
                 await page.keyboard.press('Backspace'); // Clear it
                 await page.keyboard.type(formattedDate, { delay: 500 });
                 await page.getByRole('button', { name: 'Save and Continue' }).click();
-            await page.waitForTimeout(5000);
+                await page.waitForTimeout(5000);
+
+                uploadResult = {
+                    uploaded: true,
+                    reason: `Part1 completed for application ${applicationID}`
+                };
 
                 console.log(`Part1 completed for system ${systemId}`);
             }
         } else {
-            console.log(`Disclosure ID ${disclosureID} not found for system ${systemId}`);
+            uploadResult = {
+                uploaded: false,
+                reason: `Disclosure ID ${disclosureID} not found for system ${systemId}`
+            };
         }
     await browser.close();
 
         return {
             success: true,
             systemId,
-            disclosureID
+            disclosureID,
+            uploadResult
         };
     } catch (err) {
         await browser.close();
@@ -427,4 +443,3 @@ async function runAutomation(systemId) {
 }
 
 module.exports = { runAutomation };
-
