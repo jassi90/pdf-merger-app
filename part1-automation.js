@@ -22,6 +22,7 @@ async function runAutomation(systemId) {
     await page.getByLabel('Password').fill(process.env.ABP_PW);
     await page.getByRole('button', { name: 'Sign in' }).first().click();
 
+
     await page.waitForTimeout(5000);
     await page.goto('https://portal2.carbonsolutionsgroup.com/admin/login');
     await page.fill('input[type="email"]', process.env.EMAIL);
@@ -182,6 +183,7 @@ async function runAutomation(systemId) {
             await page.getByRole('button', { name: 'Start Application' }).click();
             await page.waitForTimeout(2000);
             await page.goto('https://portal.illinoisabp.com/');
+            await page.getByRole('button', { name: 'OK' }).click();
             await page.waitForTimeout(2000);
             await page.getByRole('button', { name: 'View Project Applications' }).click();
             await page.getByRole('button', { name: 'New DG Project Application' }).click();
@@ -192,6 +194,7 @@ async function runAutomation(systemId) {
             await page.getByRole('cell', { name: disclosureID }).click();
             await page.getByRole('button', { name: 'Start Application' }).click();
             await page.getByRole('button', { name: 'OK' }).click();
+            await page.waitForTimeout(2000);
             await page.getByLabel('close').click();
             await page.getByRole('button', { name: 'Disclosure Form Search' }).click();
             await page.getByLabel('Form ID').click();
@@ -202,7 +205,11 @@ async function runAutomation(systemId) {
             const applicationID = (applicationText.replace(/[^0-9.-]/g, '')).toString();
             console.log('Application ID', applicationID);
             await page.getByRole('button', { name: 'Close page' }).click();
-            await page.getByRole('columnheader', { name: 'sort Project Application ID ' }).getByRole('spinbutton').fill(applicationID);
+            await page.getByRole('button', { name: 'Clear Filters' }).click();
+            await page.waitForTimeout(5000);
+            await page.getByRole('columnheader', { name: 'sort Project Application ID' }).getByLabel('filter', { exact: true }).click();
+            //await page.keyboard.press('Backspace');
+            await page.getByRole('columnheader', { name: 'sort Project Application ID' }).getByLabel('filter', { exact: true }).fill(applicationID);
             await page.waitForTimeout(2000);
 
             const textToCheck = 'Submitted';
@@ -217,8 +224,7 @@ async function runAutomation(systemId) {
                     reason: `Application ${applicationID} is already submitted`
                 };
             } else {
-                await page.locator('#mxui_widget_VerticalScrollContainer_0 > div.mx-scrollcontainer-middle.region-content > div > div.mx-placeholder > div > div > div > div.mx-dataview.mx-name-dataView2.form-horizontal > div > div > div > div.mx-name-dataGrid22.widget-datagrid.widget-datagrid-selectable-rows.widget-datagrid-selection-method-click > div.widget-datagrid-content.sticky-table-container > div.widget-datagrid-grid.table > div > div:nth-child(2) > div:nth-child(6) > div > div > div > div.col-lg.col-md.col > div > button').click();
-
+                await page.locator('button.mx-name-actionButton2').click();
                 await page.waitForTimeout(2000);
                 await page.getByRole('button', { name: 'Section 1 - Project Location' }).click();
                 await page.waitForTimeout(2000);
