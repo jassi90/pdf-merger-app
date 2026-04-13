@@ -10,8 +10,8 @@ async function runAutomation(systemId) {
     });
 
     const page = await browser.newPage();
-    let uploadResult = {
-        uploaded: false,
+    let Result = {
+        Success: false,
         reason: 'Part1 automation did not complete'
     };
 
@@ -212,8 +212,8 @@ async function runAutomation(systemId) {
             const textExists = await textLocator.count() > 0;
 
             if (textExists) {
-                uploadResult = {
-                    uploaded: false,
+                Result = {
+                    Success: false,
                     reason: `Application ${applicationID} is already submitted`
                 };
             } else {
@@ -415,16 +415,16 @@ async function runAutomation(systemId) {
                 await page.getByRole('button', { name: 'Save and Continue' }).click();
                 await page.waitForTimeout(5000);
 
-                uploadResult = {
-                    uploaded: true,
+                Result = {
+                    Success: true,
                     reason: `Part1 completed for application ${applicationID}`
                 };
 
                 console.log(`Part1 completed for system ${systemId}`);
             }
         } else {
-            uploadResult = {
-                uploaded: false,
+            Result = {
+                Success: false,
                 reason: `Disclosure ID ${disclosureID} not found for system ${systemId}`
             };
         }
@@ -434,7 +434,7 @@ async function runAutomation(systemId) {
             success: true,
             systemId,
             disclosureID,
-            uploadResult
+            Result
         };
     } catch (err) {
         await browser.close();
