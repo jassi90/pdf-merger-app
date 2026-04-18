@@ -8,6 +8,18 @@ const { runAutomation: runPart2Automation } = require('./part2-automation');
 const app = express();
 app.use(express.json({ limit: '1mb' }));
 
+function logLocalUsage(routeName, systemId, req) {
+  const timestamp = new Date().toISOString();
+  const clientIp =
+    req.headers['x-forwarded-for'] ||
+    req.socket?.remoteAddress ||
+    'unknown';
+
+  console.log(
+    `[LOCAL USAGE] ${timestamp} route=${routeName} systemId=${systemId ?? 'n/a'} ip=${clientIp}`
+  );
+}
+
 app.post('/run-local-automation', async (req, res) => {
   try {
     const { systemId } = req.body;
@@ -15,6 +27,8 @@ app.post('/run-local-automation', async (req, res) => {
     if (!systemId) {
       return res.status(400).send('systemId is required');
     }
+
+    logLocalUsage('/run-local-automation', systemId, req);
 
     const pdfBytes = await runDemographicAutomation(systemId);
 
@@ -36,6 +50,8 @@ app.post('/run-local-part2', async (req, res) => {
       return res.status(400).json({ error: 'systemId is required for Part2' });
     }
 
+    logLocalUsage('/run-local-part2', parsedSystemId, req);
+
     const result = await runPart2Automation(parsedSystemId);
     res.json(result);
   } catch (err) {
@@ -54,6 +70,8 @@ app.post('/run-local-part1', async (req, res) => {
     if (!Number.isFinite(parsedSystemId)) {
       return res.status(400).json({ error: 'systemId is required for Part1' });
     }
+
+    logLocalUsage('/run-local-part1', parsedSystemId, req);
 
     const result = await runPart1Automation(parsedSystemId);
     res.json(result);
