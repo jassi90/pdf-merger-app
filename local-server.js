@@ -17,7 +17,10 @@ function logLocalUsage(routeName, systemId, req) {
 
   console.log(
     `-----------------------------------------------------
-    [LOCAL USAGE] ${timestamp} route=${routeName} systemId=${systemId ?? 'n/a'} ip=${clientIp}
+    [LOCAL USAGE] ${timestamp} 
+    route=${routeName} 
+    systemId=${systemId ?? 'n/a'} 
+    ip=${clientIp}
     -------------------------------------------------------`
   
   );
