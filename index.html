@@ -429,11 +429,11 @@
 
     <div class="card">
       <h2>Generate Demographic PDF</h2>
-      <p>Enter the target system ID and download a fresh demographic report.</p>
+      <p>Enter the target CSG ID and download a fresh demographic report.</p>
 
       <div class="input-wrap">
-        <label for="systemId">System ID</label>
-        <input type="text" id="systemId" placeholder="e.g. SYS-10239" autocomplete="off">
+        <label for="systemId">CSG ID</label>
+        <input type="text" id="systemId" placeholder="e.g. 10239" autocomplete="off">
       </div>
 
       <div class="actions">
@@ -445,10 +445,10 @@
 
     <div class="card">
       <h2>Part1</h2>
-      <p>Run the Illinois ABP Part1 workflow for a single System ID.</p>
+      <p>Run the Illinois ABP Part1 workflow for a single CSG ID.</p>
 
       <div class="input-wrap">
-        <label for="part1-id">System ID</label>
+        <label for="part1-id">CSG ID</label>
         <input type="text" id="part1-id" placeholder="e.g. 171220" autocomplete="off">
       </div>
 
@@ -462,10 +462,10 @@
 
     <div class="card">
       <h2>Part2</h2>
-      <p>Run the Illinois ABP Part2 workflow for a single System ID.</p>
+      <p>Run the Illinois ABP Part2 workflow for a single CSG ID.</p>
 
       <div class="input-wrap">
-        <label for="part2-id">System ID</label>
+        <label for="part2-id">CSG ID</label>
         <input type="text" id="part2-id" placeholder="e.g. 171220" autocomplete="off">
       </div>
 
@@ -577,7 +577,7 @@ async function generatePDF() {
   const status = document.getElementById('status');
 
   if (!systemId) {
-    alert('Enter System ID');
+    alert('Enter CSG ID');
     return;
   }
 
@@ -625,7 +625,7 @@ if (part1Btn) {
 
     if (!Number.isFinite(systemId)) {
       status.className = 'error';
-      status.innerText = 'Enter a valid single System ID for Part1.';
+      status.innerText = 'Enter a valid single CSG ID for Part1.';
       resultBox.style.display = 'none';
       return;
     }
@@ -660,8 +660,8 @@ if (part1Btn) {
 
       status.className = payload.success ? 'success' : 'error';
       status.innerText = payload.success
-        ? `Part1 completed for System ID ${payload.systemId}.`
-        : `Part1 failed for System ID ${payload.systemId}.`;
+        ? `Part1 completed for CSG ID ${payload.systemId}.`
+        : `Part1 failed for CSG ID ${payload.systemId}.`;
 
       resultBox.textContent = JSON.stringify(payload.result, null, 2);
       resultBox.style.display = 'block';
@@ -684,7 +684,7 @@ if (part2Btn) {
 
     if (!Number.isFinite(systemId)) {
       status.className = 'error';
-      status.innerText = 'Enter a valid single System ID for Part2.';
+      status.innerText = 'Enter a valid single CSG ID for Part2.';
       resultBox.style.display = 'none';
       return;
     }
@@ -719,8 +719,8 @@ if (!res.ok) {
 
       status.className = payload.success ? 'success' : 'error';
       status.innerText = payload.success
-        ? `Part2 completed for System ID ${payload.systemId}.`
-        : `Part2 failed for System ID ${payload.systemId}.`;
+        ? `Part2 completed for CSG ID ${payload.systemId}.`
+        : `Part2 failed for CSG ID ${payload.systemId}.`;
 
       resultBox.textContent = JSON.stringify(payload.result, null, 2);
       resultBox.style.display = 'block';
